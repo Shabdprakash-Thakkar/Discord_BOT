@@ -182,6 +182,86 @@ class LevelManager:
             dprint("[DEBUG] Level up condition NOT MET. No notification sent.")
 
     # -----------------------------
+    # NEW: Function to remove level reward roles from users
+    # -----------------------------
+    async def remove_level_reward_roles(self, guild_id: int):
+        """Remove all level reward roles from users in the guild"""
+        try:
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                print(f"❌ Guild {guild_id} not found")
+                return 0, 0
+
+            # Get all level reward roles for this guild
+            level_roles_data = (
+                self.supabase.table("level_roles")
+                .select("*")
+                .eq("guild_id", str(guild_id))
+                .execute()
+            )
+
+            if not level_roles_data.data:
+                print(f"ℹ️ No level reward roles configured for guild {guild_id}")
+                return 0, 0
+
+            # Get all role IDs that are level rewards
+            reward_role_ids = [int(row["role_id"]) for row in level_roles_data.data]
+            roles_removed = 0
+            users_affected = 0
+
+            print(f"🔄 Removing level reward roles from guild {guild.name}...")
+
+            # Iterate through all members and remove reward roles
+            for member in guild.members:
+                if member.bot:
+                    continue
+
+                member_roles_removed = 0
+                roles_to_remove = []
+
+                # Check if member has any reward roles
+                for role in member.roles:
+                    if role.id in reward_role_ids:
+                        roles_to_remove.append(role)
+
+                # Remove the roles
+                if roles_to_remove:
+                    try:
+                        await member.remove_roles(
+                            *roles_to_remove,
+                            reason="XP Reset - Removing level reward roles",
+                        )
+                        member_roles_removed = len(roles_to_remove)
+                        roles_removed += member_roles_removed
+                        users_affected += 1
+
+                        dprint(
+                            f"[SUCCESS] Removed {member_roles_removed} reward roles from {member.display_name}"
+                        )
+
+                    except discord.Forbidden:
+                        print(
+                            f"❌ No permission to remove roles from {member.display_name}"
+                        )
+                    except discord.HTTPException as e:
+                        print(
+                            f"❌ HTTP error removing roles from {member.display_name}: {e}"
+                        )
+                    except Exception as e:
+                        print(
+                            f"❌ Error removing roles from {member.display_name}: {e}"
+                        )
+
+            print(
+                f"✅ Role removal complete: {roles_removed} roles removed from {users_affected} users"
+            )
+            return roles_removed, users_affected
+
+        except Exception as e:
+            print(f"❌ Critical error in remove_level_reward_roles: {e}")
+            return 0, 0
+
+    # -----------------------------
     # Start auto-reset loop
     # -----------------------------
     async def start(self):
@@ -270,7 +350,7 @@ class LevelManager:
         ).execute()
 
     # -----------------------------
-    # Auto-reset loop
+    # Auto-reset loop (MODIFIED to remove roles)
     # -----------------------------
     @tasks.loop(hours=24)
     async def reset_loop(self):
@@ -280,13 +360,32 @@ class LevelManager:
             last_reset = datetime.fromisoformat(row["last_reset"])
             days = row["days"]
             if (now - last_reset).days >= days:
+                guild_id = int(row["guild_id"])
+
+                # Remove level reward roles BEFORE resetting XP
+                roles_removed, users_affected = await self.remove_level_reward_roles(
+                    guild_id
+                )
+
+                # Reset XP and levels in database
                 self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
                     "guild_id", row["guild_id"]
                 ).execute()
+
+                # Reset last notified levels
+                self.supabase.table("last_notified_level").update({"level": 0}).eq(
+                    "guild_id", row["guild_id"]
+                ).execute()
+
+                # Update last reset time
                 self.supabase.table("auto_reset").update(
                     {"last_reset": now.isoformat()}
                 ).eq("guild_id", row["guild_id"]).execute()
+
                 print(f"♻️ Auto-reset XP in guild {row['guild_id']}")
+                print(
+                    f"🏅 Removed {roles_removed} reward roles from {users_affected} users"
+                )
 
     @reset_loop.before_loop
     async def before_reset_loop(self):
@@ -429,13 +528,34 @@ class LevelManager:
                 f"♻️ Auto-reset set every {days} days."
             )
 
-        @self.bot.tree.command(name="reset-xp", description="Manually reset all XP")
+        # MODIFIED: Manual reset command now removes roles too
+        @self.bot.tree.command(
+            name="reset-xp", description="Manually reset all XP and remove reward roles"
+        )
         @app_commands.checks.has_permissions(administrator=True)
         async def reset_xp(interaction: discord.Interaction):
+            await interaction.response.defer()
+
+            # Remove level reward roles first
+            roles_removed, users_affected = await self.remove_level_reward_roles(
+                interaction.guild.id
+            )
+
+            # Reset XP and levels in database
             self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
                 "guild_id", str(interaction.guild.id)
             ).execute()
-            await interaction.response.send_message("♻️ All XP reset successfully.")
+
+            # Reset last notified levels
+            self.supabase.table("last_notified_level").update({"level": 0}).eq(
+                "guild_id", str(interaction.guild.id)
+            ).execute()
+
+            await interaction.followup.send(
+                f"♻️ **XP Reset Complete!**\n"
+                f"📊 All XP and levels have been reset to 0\n"
+                f"🏅 Removed {roles_removed} reward roles from {users_affected} users"
+            )
 
         @self.bot.tree.command(
             name="debug-level", description="Debug level system configuration"
