@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import asyncio
 import os
 from supabase import create_client, Client
+from datetime import timedelta
 
 # -----------------------------
 # Debug toggle
@@ -46,7 +47,7 @@ class LevelManager:
 
         guild_id = message.guild.id
         user_id = message.author.id
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
         key = (guild_id, user_id)
 
         if key in self.cooldowns and (now - self.cooldowns[key]).total_seconds() < 10:
@@ -274,7 +275,7 @@ class LevelManager:
     @tasks.loop(hours=24)
     async def reset_loop(self):
         data = self.supabase.table("auto_reset").select("*").execute()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
         for row in data.data:
             last_reset = datetime.fromisoformat(row["last_reset"])
             days = row["days"]
@@ -416,7 +417,7 @@ class LevelManager:
                     "❌ Days must be between 1 and 365.", ephemeral=True
                 )
                 return
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
             self.supabase.table("auto_reset").upsert(
                 {
                     "guild_id": str(interaction.guild.id),
@@ -483,7 +484,7 @@ class LevelManager:
                 embed.add_field(
                     name="Level Rewards", value="❌ None configured", inline=False
                 )
-                
+
             bot_perms = interaction.guild.me.guild_permissions
             perms_info = f"Manage Roles: {'✅' if bot_perms.manage_roles else '❌'}\n"
             perms_info += (
