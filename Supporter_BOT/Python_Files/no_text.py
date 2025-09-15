@@ -17,9 +17,11 @@ class NoTextManager:
         self.lock = threading.Lock()
         self.notext_channels = self._load_json_safe({})
 
-        # URL pattern to detect links
+        # URL pattern to detect links - improved pattern
         self.url_pattern = re.compile(
-            r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+            r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+|"
+            r"(?:www\.)?[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}",
+            re.IGNORECASE,
         )
 
         # Supabase client
@@ -55,7 +57,7 @@ class NoTextManager:
         print("🚫📝 No-Text Manager initialized")
 
     def get_config(self, guild_id):
-        return self.notext_channels.get(guild_id)
+        return self.notext_channels.get(str(guild_id))
 
     # -----------------------------
     # Bypass role check
@@ -66,17 +68,21 @@ class NoTextManager:
             return True
 
         # Check Supabase bypass_roles table
-        data = (
-            self.supabase.table("bypass_roles")
-            .select("*")
-            .eq("guild_id", str(member.guild.id))
-            .execute()
-        )
-        if data.data:
-            author_role_ids = [role.id for role in member.roles]
-            for row in data.data:
-                if int(row["role_id"]) in author_role_ids:
-                    return True
+        try:
+            data = (
+                self.supabase.table("bypass_roles")
+                .select("*")
+                .eq("guild_id", str(member.guild.id))
+                .execute()
+            )
+            if data.data:
+                author_role_ids = [role.id for role in member.roles]
+                for row in data.data:
+                    if int(row["role_id"]) in author_role_ids:
+                        return True
+        except Exception as e:
+            print(f"❌ Error checking bypass roles: {e}")
+
         return False
 
     # -----------------------------
@@ -108,21 +114,38 @@ class NoTextManager:
                 await message.delete()
                 redirect_id = config["redirects"].get(str(message.channel.id))
                 if redirect_id:
-                    warning_msg = await message.channel.send(
-                        f"🚫📝 {message.author.mention}, this channel is for **media and links only**! "
-                        f"Plain text messages are not allowed. Please use <#{redirect_id}> for text-only messages.\n\n"
-                        f"**Allowed:** Images, Videos, YouTube/Instagram/Other links\n"
-                        f"**Not Allowed:** Plain text only"
-                    )
+                    # Check if redirect channel exists
+                    redirect_channel = self.bot.get_channel(redirect_id)
+                    if redirect_channel:
+                        warning_msg = await message.channel.send(
+                            f"🚫📝 {message.author.mention}, this channel is for **media and links only**! "
+                            f"Plain text messages are not allowed. Please use {redirect_channel.mention} for text-only messages.\n\n"
+                            f"**Allowed:** Images, Videos, YouTube/Instagram/Other links\n"
+                            f"**Not Allowed:** Plain text only"
+                        )
+                    else:
+                        # Fallback if redirect channel doesn't exist
+                        warning_msg = await message.channel.send(
+                            f"🚫📝 {message.author.mention}, this channel is for **media and links only**! "
+                            f"Plain text messages are not allowed.\n\n"
+                            f"**Allowed:** Images, Videos, YouTube/Instagram/Other links\n"
+                            f"**Not Allowed:** Plain text only"
+                        )
 
                     async def delete_warning():
                         await asyncio.sleep(30)
                         try:
                             await warning_msg.delete()
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"❌ Could not delete warning message: {e}")
 
                     self.bot.loop.create_task(delete_warning())
+            except discord.Forbidden:
+                print(
+                    f"❌ No permission to delete message in channel {message.channel.id}"
+                )
+            except discord.NotFound:
+                print(f"❌ Message already deleted in channel {message.channel.id}")
             except Exception as e:
                 print(f"❌ Error handling no-text message in guild {guild_id}: {e}")
 
@@ -181,9 +204,89 @@ class NoTextManager:
         )
         @app_commands.checks.has_permissions(administrator=True)
         async def bypass_no_text(interaction: discord.Interaction, role: discord.Role):
-            self.supabase.table("bypass_roles").upsert(
-                {"guild_id": str(interaction.guild.id), "role_id": str(role.id)}
-            ).execute()
-            await interaction.response.send_message(
-                f"✅ {role.mention} can now bypass no-text channels.", ephemeral=True
-            )
+            try:
+                self.supabase.table("bypass_roles").upsert(
+                    {"guild_id": str(interaction.guild.id), "role_id": str(role.id)}
+                ).execute()
+                await interaction.response.send_message(
+                    f"✅ {role.mention} can now bypass no-text channels.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                print(f"❌ Error adding bypass role: {e}")
+                await interaction.response.send_message(
+                    "❌ Error configuring bypass role. Check bot permissions.",
+                    ephemeral=True,
+                )
+
+        # Command to show bypass roles
+        @self.bot.tree.command(
+            name="show-bypass-roles",
+            description="Show all roles that can bypass no-text restrictions",
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def show_bypass_roles(interaction: discord.Interaction):
+            try:
+                data = (
+                    self.supabase.table("bypass_roles")
+                    .select("*")
+                    .eq("guild_id", str(interaction.guild.id))
+                    .execute()
+                )
+
+                if not data.data:
+                    await interaction.response.send_message(
+                        "❌ No bypass roles configured.", ephemeral=True
+                    )
+                    return
+
+                bypass_info = "🚫📝 **No-Text Bypass Roles:**\n"
+                for row in data.data:
+                    role = interaction.guild.get_role(int(row["role_id"]))
+                    role_name = (
+                        role.mention if role else f"Role ID {row['role_id']} (Deleted)"
+                    )
+                    bypass_info += f"• {role_name}\n"
+
+                await interaction.response.send_message(bypass_info, ephemeral=True)
+
+            except Exception as e:
+                print(f"❌ Error fetching bypass roles: {e}")
+                await interaction.response.send_message(
+                    "❌ Error fetching bypass roles.", ephemeral=True
+                )
+
+        # Command to remove bypass role
+        @self.bot.tree.command(
+            name="remove-bypass-role",
+            description="Remove a role's ability to bypass no-text restrictions",
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def remove_bypass_role(
+            interaction: discord.Interaction, role: discord.Role
+        ):
+            try:
+                result = (
+                    self.supabase.table("bypass_roles")
+                    .delete()
+                    .eq("guild_id", str(interaction.guild.id))
+                    .eq("role_id", str(role.id))
+                    .execute()
+                )
+
+                if result.data:
+                    await interaction.response.send_message(
+                        f"✅ {role.mention} can no longer bypass no-text channels.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ {role.mention} was not configured as a bypass role.",
+                        ephemeral=True,
+                    )
+
+            except Exception as e:
+                print(f"❌ Error removing bypass role: {e}")
+                await interaction.response.send_message(
+                    "❌ Error removing bypass role.", ephemeral=True
+                )
