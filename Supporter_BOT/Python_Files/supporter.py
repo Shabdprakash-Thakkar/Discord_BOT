@@ -26,6 +26,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
+intents.members = True
 
 # Disable the default prefix-based !help command to avoid any conflicts
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
