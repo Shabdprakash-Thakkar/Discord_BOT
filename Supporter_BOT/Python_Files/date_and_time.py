@@ -114,8 +114,8 @@ class DateTimeManager:
                 tz_india = pytz.timezone("Asia/Kolkata")
                 tz_japan = pytz.timezone("Asia/Tokyo")
 
-                india_time = datetime.now(tz_india).strftime("%I:%M %p")
-                japan_time = datetime.now(tz_japan).strftime("%I:%M %p")
+                india_time = datetime.now(tz_india).strftime("%H:%M")
+                japan_time = datetime.now(tz_japan).strftime("%H:%M")
 
                 india_channel = self.bot.get_channel(config["india"])
                 japan_channel = self.bot.get_channel(config["japan"])

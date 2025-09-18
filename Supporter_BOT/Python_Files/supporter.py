@@ -3,6 +3,12 @@ import discord
 from discord.ext import commands
 import os
 from datetime import datetime, timezone
+import logging  # --- ADD THIS LINE ---
+
+# --- ADD THIS BLOCK to configure logging ---
+# This will hide the INFO messages from discord.py
+logging.basicConfig(level=logging.WARNING)
+# You can change WARNING to ERROR if you want even fewer messages.
 
 
 # --- FIX 3: Corrected import paths to match your file structure ---
@@ -42,9 +48,10 @@ help_manager = HelpManager(bot)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
-    print(f"🆔 Bot ID: {bot.user.id}")
-    print(f"🏠 Connected to {len(bot.guilds)} guild(s)")
+    # --- FIX: Comment out the lines you don't want to see ---
+    # print(f"✅ Logged in as {bot.user}")
+    # print(f"🆔 Bot ID: {bot.user.id}")
+    # print(f"🏠 Connected to {len(bot.guilds)} guild(s)")
 
     # Start feature managers
     await datetime_manager.start()

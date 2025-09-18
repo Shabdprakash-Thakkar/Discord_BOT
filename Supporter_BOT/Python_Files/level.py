@@ -21,18 +21,39 @@ def dprint(*args, **kwargs):
         print(f"[{datetime.now(IST).isoformat()}]", *args, **kwargs)
 
 
+def safe_parse_iso(dt_str: str) -> datetime:
+    """Parse ISO-ish strings from DB (handles 'Z' or missing tz) and return IST-aware datetime."""
+    s = str(dt_str or "").strip()
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        # Try without fractional seconds
+        try:
+            s2 = s.split(".")[0]
+            dt = datetime.fromisoformat(s2)
+        except Exception:
+            # Fallback: now in IST
+            return datetime.now(IST)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST)
+
+
 class LevelManager:
     def __init__(self, bot: commands.Bot, data_dir: str):
         self.bot = bot
         self.data_dir = data_dir
+        self.voice_sessions = {}  # {(guild_id, user_id): datetime}
         self.cooldowns = {}  # {(guild_id, user_id): datetime}
 
         # Load Supabase
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
 
-        dprint(f"SUPABASE_URL: {url}")
-        dprint(f"SUPABASE_KEY: {key[:5]}...")
+        # dprint(f"SUPABASE_URL: {url}")
+        # dprint(f"SUPABASE_KEY: {key[:5]}...")
 
         if not url or not key:
             raise ValueError(
@@ -46,169 +67,34 @@ class LevelManager:
         print("🎮 LevelManager started")
         if not self.reset_loop.is_running():
             self.reset_loop.start()
-
-    # -----------------------------
-    # ROLE MANAGEMENT LOGIC
-    # -----------------------------
-    def get_all_level_roles(self, guild_id: int):
-        """Get all level roles configured for a guild, ordered by level."""
+        if not self.voice_tick_loop.is_running():
+            self.voice_tick_loop.start()
         try:
-            data = (
-                self.supabase.table("level_roles")
-                .select("*")
-                .eq("guild_id", str(guild_id))
-                .order("level", desc=True)  # Order from highest level to lowest
-                .execute()
-            )
-            return data.data if data.data else []
+            self.bot.add_listener(self.on_voice_state_update, "on_voice_state_update")
         except Exception as e:
-            dprint(f"[ERROR] Failed to get level roles: {e}")
-            return []
-
-    async def upgrade_user_roles(self, member: discord.Member, new_level: int):
-        """
-        Handles role updates on level-up.
-        Removes all old level roles and adds the single, highest-level role the user qualifies for.
-        """
+            dprint(f"[WARN] Could not add voice listener: {e}")
         try:
-            guild_id = member.guild.id
-            all_level_roles_data = self.get_all_level_roles(guild_id)
-
-            if not all_level_roles_data:
-                dprint(f"[DEBUG] No level roles configured for guild {guild_id}")
-                return None, False
-
-            # Find the highest role the user should have
-            target_role_id = None
-            for role_data in all_level_roles_data:
-                if new_level >= role_data["level"]:
-                    target_role_id = int(role_data["role_id"])
-                    break  # Since it's ordered high to low, the first match is the correct one
-
-            # Get a list of all possible level role IDs for this guild
-            all_level_role_ids = {int(r["role_id"]) for r in all_level_roles_data}
-
-            roles_to_remove = []
-            user_has_target_role = False
-
-            # Check current user roles
-            for role in member.roles:
-                if role.id in all_level_role_ids:
-                    if role.id == target_role_id:
-                        user_has_target_role = True
-                    else:
-                        roles_to_remove.append(role)
-
-            roles_changed = False
-            # Remove old level roles
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove, reason="Level role upgrade")
-                dprint(
-                    f"[SUCCESS] Removed roles from {member.display_name}: {[r.name for r in roles_to_remove]}"
-                )
-                roles_changed = True
-
-            # Add the new role if they don't have it
-            target_role_obj = None
-            if target_role_id and not user_has_target_role:
-                target_role_obj = member.guild.get_role(target_role_id)
-                if target_role_obj:
-                    await member.add_roles(
-                        target_role_obj, reason=f"Reached Level {new_level}"
-                    )
-                    dprint(
-                        f"[SUCCESS] Added role {target_role_obj.name} to {member.display_name}"
-                    )
-                    roles_changed = True  # This also counts as a change
-                else:
-                    dprint(
-                        f"[ERROR] Target role with ID {target_role_id} not found in guild."
-                    )
-
-            elif user_has_target_role:
-                target_role_obj = member.guild.get_role(target_role_id)
-
-            return target_role_obj, roles_changed
-
-        except discord.Forbidden:
-            dprint(
-                f"[ERROR] Bot lacks permission to manage roles in guild {member.guild.id}"
-            )
-            return None, False
+            await self.check_and_run_auto_reset()
         except Exception as e:
-            dprint(
-                f"[CRITICAL ERROR] Failed to upgrade user roles for {member.display_name}: {e}"
-            )
-            return None, False
+            dprint(f"[WARN] Initial auto-reset check failed: {e}")
 
-    async def remove_level_reward_roles(self, guild: discord.Guild):
-        """Remove all configured level reward roles from all members in the guild."""
-        if not guild:
-            return 0, 0
-
-        level_roles_data = self.get_all_level_roles(guild.id)
-        if not level_roles_data:
-            dprint(f"ℹ️ No level reward roles configured for guild {guild.id}")
-            return 0, 0
-
-        reward_role_ids = {int(row["role_id"]) for row in level_roles_data}
-        roles_removed_count = 0
-        users_affected_count = 0
-
-        dprint(f"🔄 Starting role removal for guild {guild.name}...")
-        for member in guild.members:
-            if member.bot:
-                continue
-
-            roles_to_remove = [
-                role for role in member.roles if role.id in reward_role_ids
-            ]
-
-            if roles_to_remove:
-                try:
-                    await member.remove_roles(*roles_to_remove, reason="XP Reset")
-                    roles_removed_count += len(roles_to_remove)
-                    users_affected_count += 1
-                    dprint(
-                        f"[SUCCESS] Removed {len(roles_to_remove)} roles from {member.display_name}"
-                    )
-                except discord.Forbidden:
-                    print(
-                        f"❌ No permission to remove roles from {member.display_name}"
-                    )
-                except Exception as e:
-                    print(f"❌ Error removing roles from {member.display_name}: {e}")
-
-        print(
-            f"✅ Role removal complete for guild {guild.name}: {roles_removed_count} roles removed from {users_affected_count} users."
-        )
-        return roles_removed_count, users_affected_count
-
-    # -----------------------------
-    # EVENT HANDLERS
-    # -----------------------------
-    async def handle_message(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
-
-        guild_id = message.guild.id
-        user_id = message.author.id
-        now = datetime.now(timezone.utc)
-        key = (guild_id, user_id)
-
-        # Cooldown check
-        if key in self.cooldowns and (now - self.cooldowns[key]).total_seconds() < 10:
-            return
-        self.cooldowns[key] = now
-
-        # Update XP and check for level up
-        xp, level = self.update_user_xp(guild_id, user_id, 10, message.author.name)
+    async def _check_and_handle_level_up(self, member: discord.Member, new_level: int):
+        guild_id = member.guild.id
+        user_id = member.id
         last_level = self.get_user_last_notified_level(guild_id, user_id)
 
-        if level > last_level:
-            dprint(f"[LEVEL UP] {message.author.name} reached Level {level}")
+        if new_level > last_level:
+            dprint(f"[LEVEL UP] {member.name} reached Level {new_level}")
+            await self.upgrade_user_roles(member, new_level)
+            all_roles_data = self.get_all_level_roles(guild_id)
+            earned_role = None
+            for role_data in all_roles_data:
+                if role_data["level"] == new_level:
+                    role_obj = member.guild.get_role(int(role_data["role_id"]))
+                    if role_obj:
+                        earned_role = role_obj
+                        break
 
-            # Get notification channel
             channel_id = self.get_notify_channel(guild_id)
             if not channel_id:
                 dprint(f"[ERROR] No notification channel set for guild {guild_id}")
@@ -217,35 +103,202 @@ class LevelManager:
             channel = self.bot.get_channel(int(channel_id))
             if (
                 not channel
-                or not channel.permissions_for(message.guild.me).send_messages
+                or not channel.permissions_for(member.guild.me).send_messages
             ):
                 dprint(
                     f"[ERROR] Cannot find or send messages in notification channel {channel_id}"
                 )
                 return
 
-            # Perform role upgrade
-            new_role, roles_changed = await self.upgrade_user_roles(
-                message.author, level
+            try:
+                if earned_role:
+                    await channel.send(
+                        f"🎉 Congrats {member.mention}! You've reached **Level {new_level}** and unlocked the role {earned_role.mention}!"
+                    )
+                else:
+                    await channel.send(
+                        f"🚀 Congrats {member.mention}! You've reached **Level {new_level}**! Keep it up!"
+                    )
+            except Exception as e:
+                dprint(
+                    f"  [CRITICAL FAIL] An error occurred while trying to send the message: {e}"
+                )
+                return
+
+            self.set_user_last_notified_level(guild_id, user_id, new_level)
+
+    def get_all_level_roles(self, guild_id: int):
+        try:
+            data = (
+                self.supabase.table("level_roles")
+                .select("*")
+                .eq("guild_id", str(guild_id))
+                .order("level", desc=True)
+                .execute()
+            )
+            return data.data if data.data else []
+        except Exception as e:
+            dprint(f"[ERROR] Failed to get level roles: {e}")
+            return []
+
+    async def upgrade_user_roles(self, member: discord.Member, new_level: int):
+        try:
+            guild_id = member.guild.id
+            all_level_roles_data = self.get_all_level_roles(guild_id)
+            if not all_level_roles_data:
+                return
+
+            target_role_id = None
+            for role_data in all_level_roles_data:
+                if new_level >= role_data["level"]:
+                    target_role_id = int(role_data["role_id"])
+                    break
+
+            all_level_role_ids = {int(r["role_id"]) for r in all_level_roles_data}
+            roles_to_remove = []
+            user_has_target_role = False
+            for role in member.roles:
+                if role.id in all_level_role_ids:
+                    if role.id == target_role_id:
+                        user_has_target_role = True
+                    else:
+                        roles_to_remove.append(role)
+
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason="Level role sync")
+            if target_role_id and not user_has_target_role:
+                target_role_obj = member.guild.get_role(target_role_id)
+                if target_role_obj:
+                    await member.add_roles(
+                        target_role_obj, reason=f"Reached Level {new_level}"
+                    )
+        except discord.Forbidden:
+            dprint(
+                f"[ERROR] Bot lacks permission to manage roles in guild {member.guild.id}"
+            )
+        except Exception as e:
+            dprint(
+                f"[CRITICAL ERROR] Failed to upgrade user roles for {member.display_name}: {e}"
             )
 
-            # Send notification
-            if new_role:
-                await channel.send(
-                    f"🎉 Congrats {message.author.mention}! You reached **Level {level}** and earned the **{new_role.mention}** role!"
-                )
+    async def remove_level_reward_roles(self, guild: discord.Guild):
+        if not guild:
+            return 0, 0
+        level_roles_data = self.get_all_level_roles(guild.id)
+        if not level_roles_data:
+            return 0, 0
+        reward_role_ids = {int(row["role_id"]) for row in level_roles_data}
+        roles_removed, users_affected = 0, 0
+        for member in guild.members:
+            if member.bot:
+                continue
+            roles_to_remove = [
+                role for role in member.roles if role.id in reward_role_ids
+            ]
+            if roles_to_remove:
+                try:
+                    await member.remove_roles(*roles_to_remove, reason="XP Reset")
+                    roles_removed += len(roles_to_remove)
+                    users_affected += 1
+                except Exception:
+                    pass
+        return roles_removed, users_affected
+
+    async def _award_voice_xp(self, member: discord.Member, start_time: datetime):
+        """Awards XP for voice activity and returns the uncredited time."""
+        elapsed_seconds = (datetime.now(IST) - start_time).total_seconds()
+        blocks = int(elapsed_seconds // 120)
+
+        if blocks > 0:
+            amount = blocks * 3
+            _, new_level = self.update_user_xp(
+                member.guild.id, member.id, amount, member.name, member.guild.name
+            )
+            # --- REMOVED --- The noisy dprint for voice XP has been removed.
+            await self._check_and_handle_level_up(member, new_level)
+
+        return timedelta(seconds=elapsed_seconds % 120)
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
+        if member.bot or not member.guild:
+            return
+        key = (member.guild.id, member.id)
+        now = datetime.now(IST)
+
+        if not before.channel and after.channel:
+            self.voice_sessions[key] = now
+            return
+
+        if before.channel and not after.channel:
+            start_time = self.voice_sessions.pop(key, None)
+            if start_time:
+                await self._award_voice_xp(member, start_time)
+            return
+
+        if before.channel != after.channel:
+            start_time = self.voice_sessions.get(key)
+            if start_time:
+                await self._award_voice_xp(member, start_time)
+            if after.channel:
+                self.voice_sessions[key] = now
             else:
-                await channel.send(
-                    f"🎉 Congrats {message.author.mention}! You reached **Level {level}**!"
-                )
+                self.voice_sessions.pop(key, None)
 
-            # Update notified level in DB
-            self.set_user_last_notified_level(guild_id, user_id, level)
+    @tasks.loop(seconds=120)
+    async def voice_tick_loop(self):
+        """Periodically awards XP to users in voice chat and resets their timers."""
+        now = datetime.now(IST)
+        for (guild_id, user_id), start_time in list(self.voice_sessions.items()):
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                self.voice_sessions.pop((guild_id, user_id), None)
+                continue
 
-    # -----------------------------
-    # DATABASE HELPERS
-    # -----------------------------
-    def get_user(self, guild_id: int, user_id: int, username: str = "Unknown"):
+            member = guild.get_member(user_id)
+            if not member or not member.voice:
+                self.voice_sessions.pop((guild_id, user_id), None)
+                continue
+
+            remainder_delta = await self._award_voice_xp(member, start_time)
+            self.voice_sessions[(guild_id, user_id)] = now - remainder_delta
+
+    @voice_tick_loop.before_loop
+    async def before_voice_tick_loop(self):
+        await self.bot.wait_until_ready()
+
+    async def handle_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+
+        def _is_image(att):
+            ct = (att.content_type or "").lower()
+            return ct.startswith("image/") or att.filename.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".svg")
+            )
+
+        is_image_msg = any(_is_image(a) for a in getattr(message, "attachments", []))
+        amount = 2 if is_image_msg else 1
+        _, level = self.update_user_xp(
+            message.guild.id,
+            message.author.id,
+            amount,
+            message.author.name,
+            message.guild.name,
+        )
+        await self._check_and_handle_level_up(message.author, level)
+
+    def get_user(
+        self,
+        guild_id: int,
+        user_id: int,
+        username: str = "Unknown",
+        guild_name: str = "Unknown Guild",
+    ):
         data = (
             self.supabase.table("users")
             .select("*")
@@ -256,9 +309,9 @@ class LevelManager:
         if data.data:
             return data.data[0]
         else:
-            # Create user if not exist
             new_user = {
                 "guild_id": str(guild_id),
+                "guild_name": guild_name,
                 "user_id": str(user_id),
                 "username": username,
                 "xp": 0,
@@ -267,12 +320,19 @@ class LevelManager:
             self.supabase.table("users").insert(new_user).execute()
             return new_user
 
-    def update_user_xp(self, guild_id: int, user_id: int, amount: int, username: str):
-        user = self.get_user(guild_id, user_id, username)
+    def update_user_xp(
+        self, guild_id: int, user_id: int, amount: int, username: str, guild_name: str
+    ):
+        user = self.get_user(guild_id, user_id, username, guild_name)
         new_xp = user["xp"] + amount
-        new_level = new_xp // 1000  # 1000 XP per level
+        new_level = new_xp // 1000
         self.supabase.table("users").update(
-            {"xp": new_xp, "level": new_level, "username": username}
+            {
+                "xp": new_xp,
+                "level": new_level,
+                "username": username,
+                "guild_name": guild_name,
+            }
         ).eq("guild_id", str(guild_id)).eq("user_id", str(user_id)).execute()
         return new_xp, new_level
 
@@ -300,50 +360,54 @@ class LevelManager:
             {"guild_id": str(guild_id), "user_id": str(user_id), "level": level}
         ).execute()
 
-    # -----------------------------
-    # AUTO-RESET TASK
-    # -----------------------------
-    @tasks.loop(hours=24)
-    async def reset_loop(self):
+    async def check_and_run_auto_reset(self):
         now = datetime.now(IST)
-        configs = self.supabase.table("auto_reset").select("*").execute().data
+        try:
+            configs = self.supabase.table("auto_reset").select("*").execute().data
+        except Exception as e:
+            dprint(f"[AUTO-RESET] Failed to load configs: {e}")
+            return
 
-        for row in configs:
-            last_reset = datetime.fromisoformat(row["last_reset"])
-            if (now - last_reset).days >= row["days"]:
-                guild = self.bot.get_guild(int(row["guild_id"]))
-                if not guild:
-                    print(f"Auto-reset failed: Guild {row['guild_id']} not found.")
+        for row in configs or []:
+            try:
+                last_reset, days_cfg = safe_parse_iso(row.get("last_reset")), int(
+                    row.get("days", 0)
+                )
+                if (
+                    days_cfg <= 0
+                    or (now - last_reset).total_seconds() < days_cfg * 86400
+                ):
                     continue
 
-                print(f"♻️ Auto-reset triggered for guild {guild.name} ({guild.id})")
+                guild = self.bot.get_guild(int(row.get("guild_id")))
+                if not guild:
+                    dprint(f"[AUTO-RESET] Guild {row.get('guild_id')} not found.")
+                    continue
 
-                # 1. Remove reward roles
+                dprint(f"♻️ Auto-reset triggered for guild {guild.name} ({guild.id})")
                 await self.remove_level_reward_roles(guild)
-
-                # 2. Reset database tables
                 self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
-                    "guild_id", row["guild_id"]
+                    "guild_id", str(guild.id)
                 ).execute()
                 self.supabase.table("last_notified_level").update({"level": 0}).eq(
-                    "guild_id", row["guild_id"]
+                    "guild_id", str(guild.id)
                 ).execute()
-
-                # 3. Update last reset time
                 self.supabase.table("auto_reset").update(
                     {"last_reset": now.isoformat()}
-                ).eq("guild_id", row["guild_id"]).execute()
-                print(f"✅ Auto-reset complete for guild {guild.name}")
+                ).eq("guild_id", str(guild.id)).execute()
+                dprint(f"✅ Auto-reset complete for guild {guild.name}")
+            except Exception as e:
+                dprint(f"[AUTO-RESET ERROR] {e}")
+
+    @tasks.loop(hours=24)
+    async def reset_loop(self):
+        await self.check_and_run_auto_reset()
 
     @reset_loop.before_loop
     async def before_reset_loop(self):
         await self.bot.wait_until_ready()
 
-    # -----------------------------
-    # SLASH COMMANDS
-    # -----------------------------
     def register_commands(self):
-
         @self.bot.tree.command(
             name="setup-level-reward",
             description="Set a role reward for reaching a specific level.",
@@ -355,8 +419,10 @@ class LevelManager:
             self.supabase.table("level_roles").upsert(
                 {
                     "guild_id": str(interaction.guild.id),
+                    "guild_name": interaction.guild.name,
                     "level": level,
                     "role_id": str(role.id),
+                    "role_name": role.name,
                 }
             ).execute()
             await interaction.response.send_message(
@@ -375,14 +441,10 @@ class LevelManager:
                     "❌ No level rewards configured yet.", ephemeral=True
                 )
                 return
-
             msg = "🏅 **Level Rewards (Highest First):**\n"
             for row in data:
                 role = interaction.guild.get_role(int(row["role_id"]))
-                role_name = (
-                    role.mention if role else f"Unknown Role (ID: {row['role_id']})"
-                )
-                msg += f"Level {row['level']} → {role_name}\n"
+                msg += f"Level {row['level']} → {role.mention if role else f'Unknown Role (ID: {row['role_id']})'}\n"
             await interaction.response.send_message(msg, ephemeral=True)
 
         @self.bot.tree.command(
@@ -406,12 +468,10 @@ class LevelManager:
         async def level(
             interaction: discord.Interaction, member: discord.Member = None
         ):
-            target_member = member or interaction.user
-            user_data = self.get_user(
-                interaction.guild.id, target_member.id, target_member.name
-            )
+            target = member or interaction.user
+            user_data = self.get_user(interaction.guild.id, target.id, target.name)
             embed = discord.Embed(
-                title=f"📊 Level Info for {target_member.display_name}", color=0x3498DB
+                title=f"📊 Level Info for {target.display_name}", color=0x3498DB
             )
             embed.add_field(name="Level", value=user_data["level"])
             embed.add_field(name="XP", value=user_data["xp"])
@@ -435,13 +495,8 @@ class LevelManager:
             )
             for i, row in enumerate(data, start=1):
                 member = interaction.guild.get_member(int(row["user_id"]))
-                name = (
-                    member.display_name
-                    if member
-                    else row.get("username", "Unknown User")
-                )
                 embed.add_field(
-                    name=f"#{i} {name}",
+                    name=f"#{i} {member.display_name if member else row.get('username', 'Unknown')}",
                     value=f"Lvl {row['level']} ({row['xp']} XP)",
                     inline=False,
                 )
@@ -451,6 +506,7 @@ class LevelManager:
             name="set-auto-reset",
             description="Set automatic XP reset schedule (in days).",
         )
+        @app_commands.describe(days="Number of days between automatic resets (1-365)")
         @app_commands.checks.has_permissions(administrator=True)
         async def set_auto_reset(interaction: discord.Interaction, days: int):
             if not 1 <= days <= 365:
@@ -467,8 +523,63 @@ class LevelManager:
                 }
             ).execute()
             await interaction.response.send_message(
-                f"♻️ Auto-reset has been set for every {days} days."
+                f"♻️ Auto-reset has been set for every {days} day{'s' if days > 1 else ''}.\nThe next reset will occur in {days} day{'s' if days > 1 else ''} from now.",
+                ephemeral=True,
             )
+
+        @self.bot.tree.command(
+            name="show-auto-reset",
+            description="Show the current auto-reset configuration for this server.",
+        )
+        @app_commands.checks.has_permissions(administrator=True)
+        async def show_auto_reset(interaction: discord.Interaction):
+            try:
+                data = (
+                    self.supabase.table("auto_reset")
+                    .select("*")
+                    .eq("guild_id", str(interaction.guild.id))
+                    .execute()
+                )
+                if not data.data:
+                    await interaction.response.send_message(
+                        "❌ Auto-reset is not configured for this server.",
+                        ephemeral=True,
+                    )
+                    return
+                config, now = data.data[0], datetime.now(IST)
+                days = config.get("days", 0)
+                last_reset = safe_parse_iso(config.get("last_reset"))
+                next_reset = last_reset + timedelta(days=days)
+                time_until = next_reset - now
+                embed = discord.Embed(
+                    title="♻️ Auto-Reset Configuration", color=0x3498DB
+                )
+                embed.add_field(
+                    name="Reset Interval",
+                    value=f"{days} day{'s' if days != 1 else ''}",
+                    inline=True,
+                )
+                embed.add_field(
+                    name="Last Reset",
+                    value=last_reset.strftime("%Y-%m-%d %H:%M IST"),
+                    inline=True,
+                )
+                embed.add_field(
+                    name="Next Reset",
+                    value=next_reset.strftime("%Y-%m-%d %H:%M IST"),
+                    inline=False,
+                )
+                embed.add_field(
+                    name="Time Remaining",
+                    value=f"{max(0, time_until.days)} day{'s' if time_until.days != 1 else ''}, {max(0, time_until.seconds // 3600)} hour{'s' if (time_until.seconds // 3600) != 1 else ''}",
+                    inline=False,
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            except Exception as e:
+                dprint(f"[ERROR] Failed to show auto-reset config: {e}")
+                await interaction.response.send_message(
+                    "❌ Failed to retrieve auto-reset configuration.", ephemeral=True
+                )
 
         @self.bot.tree.command(
             name="stop-auto-reset",
@@ -490,24 +601,17 @@ class LevelManager:
         @app_commands.checks.has_permissions(administrator=True)
         async def reset_xp(interaction: discord.Interaction):
             await interaction.response.defer(thinking=True)
-
-            # 1. Remove roles
             roles_removed, users_affected = await self.remove_level_reward_roles(
                 interaction.guild
             )
-
-            # 2. Reset DB
             self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
                 "guild_id", str(interaction.guild.id)
             ).execute()
             self.supabase.table("last_notified_level").update({"level": 0}).eq(
                 "guild_id", str(interaction.guild.id)
             ).execute()
-
             await interaction.followup.send(
-                f"♻️ **Manual XP Reset Complete!**\n"
-                f"- All user XP and levels have been reset to 0.\n"
-                f"- Removed {roles_removed} reward roles from {users_affected} users."
+                f"♻️ **Manual XP Reset Complete!**\n- All user XP and levels have been reset to 0.\n- Removed {roles_removed} reward roles from {users_affected} users."
             )
 
         @self.bot.tree.command(
@@ -517,7 +621,6 @@ class LevelManager:
         @app_commands.checks.has_permissions(administrator=True)
         async def upgrade_all_roles(interaction: discord.Interaction):
             await interaction.response.defer(thinking=True)
-
             users_data = (
                 self.supabase.table("users")
                 .select("*")
@@ -530,8 +633,7 @@ class LevelManager:
                     "No users found in the database for this server."
                 )
                 return
-
-            users_changed_count = 0
+            changed_count = 0
             for user in users_data:
                 member = interaction.guild.get_member(int(user["user_id"]))
                 if member:
@@ -539,8 +641,7 @@ class LevelManager:
                         member, user["level"]
                     )
                     if roles_changed:
-                        users_changed_count += 1
-
+                        changed_count += 1
             await interaction.followup.send(
-                f"🔄 Role synchronization complete! {users_changed_count} users had their roles updated."
+                f"🔄 Role synchronization complete! {changed_count} users had their roles updated."
             )

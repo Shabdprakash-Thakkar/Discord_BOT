@@ -12,24 +12,24 @@ A multi-functional Discord bot designed to automate server management and enhanc
 
 * **⚙️ Easy Configuration:** All features are managed through simple and intuitive slash commands. A dedicated `/show-config` command allows administrators to get a quick overview of all current bot settings for the server.
 
-Of course. Here are the updated and symmetrically formatted tables for your `README.md` file.
-
-When you paste this into a raw text editor like VS Code, the columns will align perfectly, making it easy to read and maintain.
-
 ***
 
 ## 🏆 XP & Leveling System Details
 
-The bot uses a simple, linear progression system. Users earn **10 XP** for each message sent (with a 10-second cooldown), and a new level is achieved every **1,000 total XP**.
+The bot uses a simple, linear progression system where a new level is achieved every **1,000 total XP**. Users earn XP in several ways:
 
-| Target Level | Total XP Needed | Total Messages Needed |
-| :----------- | :-------------- | :-------------------- |
-| **Level 1**  | 1,000 XP        | 100 messages          |
-| **Level 10** | 10,000 XP       | 1,000 messages        |
-| **Level 20** | 20,000 XP       | 2,000 messages        |
-| **Level 30** | 30,000 XP       | 3,000 messages        |
-| **Level 50** | 50,000 XP       | 5,000 messages        |
-| **Level 100**| 100,000 XP      | 10,000 messages       |
+* **Text Messages**: 1 XP per message
+* **Image Messages**: 2 XP per message
+* **Voice Chat**: 3 XP per 120 seconds of activity
+
+| Target Level | Total XP Needed |
+| :----------- | :-------------- |
+| **Level 1**  | 1,000 XP        |
+| **Level 10** | 10,000 XP       |
+| **Level 20** | 20,000 XP       |
+| **Level 30** | 30,000 XP       |
+| **Level 50** | 50,000 XP       |
+| **Level 100**| 100,000 XP      |
 
 ## 🤖 Command List
 
@@ -52,6 +52,7 @@ All bot interactions are handled through slash commands available by typing `/` 
 | `/level-reward-show`    | Views all configured level rewards for the server.               | Administrator |
 | `/notify-level-msg`     | Sets the channel for level-up notification messages.             | Administrator |
 | `/set-auto-reset`       | Sets an automatic XP reset schedule (in days).                   | Administrator |
+| `/show-auto-reset`      | Shows the current auto-reset configuration for this server.      | Administrator |
 | `/stop-auto-reset`      | Disables the automatic XP reset for this server.                 | Administrator |
 | `/reset-xp`             | Manually resets all XP/levels and removes reward roles.          | Administrator |
 | `/upgrade-all-roles`    | Manually syncs roles for all users based on their current level. | Administrator |
@@ -98,7 +99,7 @@ Before you begin, you will need:
 
 * Python 3.8 or a newer version installed.
 * A Discord Bot application created on the Discord Developer Portal.
-* A free project set up on Supabase to act as the database.
+* A free project set up on PostgreSQL database.
 
 ### Step 2: Bot Installation
 
@@ -106,11 +107,11 @@ Download the project files to your computer. It is highly recommended to create 
 
 ### Step 3: Database Configuration
 
-The bot uses a Supabase database to store all persistent data. In your Supabase project's SQL Editor, you will need to create the required tables for the bot to function, including tables for `users`, `level_roles`, `level_notify_channel`, `last_notified_level`, `bypass_roles`, and `auto_reset`.
+The bot uses a database to store all persistent data. In your Database project's SQL Editor, you will need to create the required tables for the bot to function, including tables for `users`, `level_roles`, `level_notify_channel`, `last_notified_level`, `bypass_roles`, and `auto_reset`.
 
 ### Step 4: Environment Variables
 
-Create a new file inside the `Data_Files` folder for your environment variables. In this file, you must provide your bot's private token from the Discord Developer Portal, as well as the URL and public key from your Supabase project's API settings.
+Create a new file inside the `Data_Files` folder for your environment variables. In this file, you must provide your bot's private token from the Discord Developer Portal, as well as the URL and public key from your Database project's API settings.
 
 ### Step 5: Running the Bot
 
