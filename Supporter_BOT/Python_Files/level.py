@@ -11,6 +11,11 @@ from supabase import create_client, Client
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # -----------------------------
+# Voice XP Limit Constant
+# -----------------------------
+VOICE_XP_LIMIT = 1500
+
+# -----------------------------
 # Debug toggle
 # -----------------------------
 DEBUG = True  # Change to True if you want detailed print statements for debugging
@@ -51,9 +56,6 @@ class LevelManager:
         # Load Supabase
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
-
-        # dprint(f"SUPABASE_URL: {url}")
-        # dprint(f"SUPABASE_KEY: {key[:5]}...")
 
         if not url or not key:
             raise ValueError(
@@ -125,7 +127,10 @@ class LevelManager:
                 )
                 return
 
-            self.set_user_last_notified_level(guild_id, user_id, new_level)
+            # MODIFIED: Pass names to the function
+            self.set_user_last_notified_level(
+                guild_id, user_id, new_level, member.guild.name, member.name
+            )
 
     def get_all_level_roles(self, guild_id: int):
         try:
@@ -142,11 +147,15 @@ class LevelManager:
             return []
 
     async def upgrade_user_roles(self, member: discord.Member, new_level: int):
+        """
+        Upgrades a user's roles based on their new level.
+        Returns True if roles were changed, False otherwise.
+        """
         try:
             guild_id = member.guild.id
             all_level_roles_data = self.get_all_level_roles(guild_id)
             if not all_level_roles_data:
-                return
+                return False
 
             target_role_id = None
             for role_data in all_level_roles_data:
@@ -164,14 +173,21 @@ class LevelManager:
                     else:
                         roles_to_remove.append(role)
 
+            roles_changed = False
             if roles_to_remove:
                 await member.remove_roles(*roles_to_remove, reason="Level role sync")
+                roles_changed = True
+
             if target_role_id and not user_has_target_role:
                 target_role_obj = member.guild.get_role(target_role_id)
                 if target_role_obj:
                     await member.add_roles(
                         target_role_obj, reason=f"Reached Level {new_level}"
                     )
+                    roles_changed = True
+
+            return roles_changed
+
         except discord.Forbidden:
             dprint(
                 f"[ERROR] Bot lacks permission to manage roles in guild {member.guild.id}"
@@ -180,6 +196,7 @@ class LevelManager:
             dprint(
                 f"[CRITICAL ERROR] Failed to upgrade user roles for {member.display_name}: {e}"
             )
+        return False
 
     async def remove_level_reward_roles(self, guild: discord.Guild):
         if not guild:
@@ -200,22 +217,51 @@ class LevelManager:
                     await member.remove_roles(*roles_to_remove, reason="XP Reset")
                     roles_removed += len(roles_to_remove)
                     users_affected += 1
-                except Exception:
-                    pass
+                except discord.Forbidden:
+                    dprint(
+                        f"[WARN] No permission to remove roles from {member.display_name} in {guild.name}"
+                    )
+                except Exception as e:
+                    dprint(
+                        f"[WARN] Failed to remove roles from {member.display_name}: {e}"
+                    )
         return roles_removed, users_affected
 
     async def _award_voice_xp(self, member: discord.Member, start_time: datetime):
-        """Awards XP for voice activity and returns the uncredited time."""
+        """Awards XP for voice activity, respecting the voice XP limit."""
+        user = self.get_user(member.guild.id, member.id, member.name, member.guild.name)
+        current_voice_xp = user.get("voice_xp_earned", 0)
+
+        if current_voice_xp >= VOICE_XP_LIMIT:
+            # dprint(f"[VOICE LIMIT] {member.name} has reached the voice XP limit.")
+            return datetime.now(IST) - start_time
+
         elapsed_seconds = (datetime.now(IST) - start_time).total_seconds()
         blocks = int(elapsed_seconds // 120)
 
         if blocks > 0:
-            amount = blocks * 3
-            _, new_level = self.update_user_xp(
-                member.guild.id, member.id, amount, member.name, member.guild.name
-            )
-            # --- REMOVED --- The noisy dprint for voice XP has been removed.
-            await self._check_and_handle_level_up(member, new_level)
+            xp_to_add = blocks * 3
+            remaining_room = VOICE_XP_LIMIT - current_voice_xp
+            xp_to_add = min(xp_to_add, remaining_room)
+
+            if xp_to_add > 0:
+                new_total_xp = user["xp"] + xp_to_add
+                new_level = new_total_xp // 1000
+                new_voice_xp = current_voice_xp + xp_to_add
+
+                self.supabase.table("users").update(
+                    {
+                        "xp": new_total_xp,
+                        "level": new_level,
+                        "voice_xp_earned": new_voice_xp,
+                        "username": member.name,
+                        "guild_name": member.guild.name,
+                    }
+                ).eq("guild_id", str(member.guild.id)).eq(
+                    "user_id", str(member.id)
+                ).execute()
+
+                await self._check_and_handle_level_up(member, new_level)
 
         return timedelta(seconds=elapsed_seconds % 120)
 
@@ -316,6 +362,7 @@ class LevelManager:
                 "username": username,
                 "xp": 0,
                 "level": 0,
+                "voice_xp_earned": 0,
             }
             self.supabase.table("users").insert(new_user).execute()
             return new_user
@@ -323,6 +370,7 @@ class LevelManager:
     def update_user_xp(
         self, guild_id: int, user_id: int, amount: int, username: str, guild_name: str
     ):
+        """Updates XP for non-voice activities (text, images)."""
         user = self.get_user(guild_id, user_id, username, guild_name)
         new_xp = user["xp"] + amount
         new_level = new_xp // 1000
@@ -355,9 +403,18 @@ class LevelManager:
         )
         return data.data[0]["level"] if data.data else 0
 
-    def set_user_last_notified_level(self, guild_id: int, user_id: int, level: int):
+    # MODIFIED: Accepts names to store in the database.
+    def set_user_last_notified_level(
+        self, guild_id: int, user_id: int, level: int, guild_name: str, username: str
+    ):
         self.supabase.table("last_notified_level").upsert(
-            {"guild_id": str(guild_id), "user_id": str(user_id), "level": level}
+            {
+                "guild_id": str(guild_id),
+                "user_id": str(user_id),
+                "level": level,
+                "guild_name": guild_name,
+                "username": username,
+            }
         ).execute()
 
     async def check_and_run_auto_reset(self):
@@ -385,21 +442,26 @@ class LevelManager:
                     continue
 
                 dprint(f"♻️ Auto-reset triggered for guild {guild.name} ({guild.id})")
+
                 await self.remove_level_reward_roles(guild)
-                self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
-                    "guild_id", str(guild.id)
-                ).execute()
+                self.supabase.table("users").update(
+                    {"xp": 0, "level": 0, "voice_xp_earned": 0}
+                ).eq("guild_id", str(guild.id)).execute()
                 self.supabase.table("last_notified_level").update({"level": 0}).eq(
                     "guild_id", str(guild.id)
                 ).execute()
                 self.supabase.table("auto_reset").update(
-                    {"last_reset": now.isoformat()}
+                    {
+                        "last_reset": now.isoformat(),
+                        "guild_name": guild.name,
+                    }  # MODIFIED: Update guild name on reset
                 ).eq("guild_id", str(guild.id)).execute()
+
                 dprint(f"✅ Auto-reset complete for guild {guild.name}")
             except Exception as e:
                 dprint(f"[AUTO-RESET ERROR] {e}")
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def reset_loop(self):
         await self.check_and_run_auto_reset()
 
@@ -408,6 +470,7 @@ class LevelManager:
         await self.bot.wait_until_ready()
 
     def register_commands(self):
+        # MODIFIED: This command now saves the role and guild name.
         @self.bot.tree.command(
             name="setup-level-reward",
             description="Set a role reward for reaching a specific level.",
@@ -444,9 +507,18 @@ class LevelManager:
             msg = "🏅 **Level Rewards (Highest First):**\n"
             for row in data:
                 role = interaction.guild.get_role(int(row["role_id"]))
-                msg += f"Level {row['level']} → {role.mention if role else f'Unknown Role (ID: {row['role_id']})'}\n"
-            await interaction.response.send_message(msg, ephemeral=True)
+                # Display stored role name as a fallback
+                role_mention = (
+                    role.mention
+                    if role
+                    else f'**{row.get("role_name", "Unknown Role")}** (Deleted)'
+                )
+                msg += f"Level {row['level']} → {role_mention}\n"
+            await interaction.response.send_message(
+                msg, ephemeral=True, suppress_embeds=True
+            )
 
+        # MODIFIED: This command now saves the channel and guild name.
         @self.bot.tree.command(
             name="notify-level-msg", description="Set a channel for level-up messages."
         )
@@ -455,7 +527,12 @@ class LevelManager:
             interaction: discord.Interaction, channel: discord.TextChannel
         ):
             self.supabase.table("level_notify_channel").upsert(
-                {"guild_id": str(interaction.guild.id), "channel_id": str(channel.id)}
+                {
+                    "guild_id": str(interaction.guild.id),
+                    "guild_name": interaction.guild.name,
+                    "channel_id": str(channel.id),
+                    "channel_name": channel.name,
+                }
             ).execute()
             await interaction.response.send_message(
                 f"✅ Level-up messages will now be sent in {channel.mention}",
@@ -469,12 +546,21 @@ class LevelManager:
             interaction: discord.Interaction, member: discord.Member = None
         ):
             target = member or interaction.user
-            user_data = self.get_user(interaction.guild.id, target.id, target.name)
+            user_data = self.get_user(
+                interaction.guild.id, target.id, target.name, interaction.guild.name
+            )
             embed = discord.Embed(
                 title=f"📊 Level Info for {target.display_name}", color=0x3498DB
             )
-            embed.add_field(name="Level", value=user_data["level"])
-            embed.add_field(name="XP", value=user_data["xp"])
+            embed.add_field(name="Level", value=user_data.get("level", 0))
+            embed.add_field(name="Total XP", value=user_data.get("xp", 0))
+
+            voice_xp = user_data.get("voice_xp_earned", 0)
+            embed.add_field(
+                name="Voice XP This Period",
+                value=f"{voice_xp} / {VOICE_XP_LIMIT}",
+                inline=False,
+            )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         @self.bot.tree.command(
@@ -495,13 +581,19 @@ class LevelManager:
             )
             for i, row in enumerate(data, start=1):
                 member = interaction.guild.get_member(int(row["user_id"]))
+                name = (
+                    member.display_name
+                    if member
+                    else row.get("username", "Unknown User")
+                )
                 embed.add_field(
-                    name=f"#{i} {member.display_name if member else row.get('username', 'Unknown')}",
+                    name=f"#{i} {name}",
                     value=f"Lvl {row['level']} ({row['xp']} XP)",
                     inline=False,
                 )
             await interaction.response.send_message(embed=embed)
 
+        # MODIFIED: This command now saves the guild name.
         @self.bot.tree.command(
             name="set-auto-reset",
             description="Set automatic XP reset schedule (in days).",
@@ -518,6 +610,7 @@ class LevelManager:
             self.supabase.table("auto_reset").upsert(
                 {
                     "guild_id": str(interaction.guild.id),
+                    "guild_name": interaction.guild.name,
                     "days": days,
                     "last_reset": now.isoformat(),
                 }
@@ -604,14 +697,14 @@ class LevelManager:
             roles_removed, users_affected = await self.remove_level_reward_roles(
                 interaction.guild
             )
-            self.supabase.table("users").update({"xp": 0, "level": 0}).eq(
-                "guild_id", str(interaction.guild.id)
-            ).execute()
+            self.supabase.table("users").update(
+                {"xp": 0, "level": 0, "voice_xp_earned": 0}
+            ).eq("guild_id", str(interaction.guild.id)).execute()
             self.supabase.table("last_notified_level").update({"level": 0}).eq(
                 "guild_id", str(interaction.guild.id)
             ).execute()
             await interaction.followup.send(
-                f"♻️ **Manual XP Reset Complete!**\n- All user XP and levels have been reset to 0.\n- Removed {roles_removed} reward roles from {users_affected} users."
+                f"♻️ **Manual XP Reset Complete!**\n- All user XP, levels, and voice XP have been reset to 0.\n- Removed {roles_removed} reward roles from {users_affected} users."
             )
 
         @self.bot.tree.command(
@@ -633,15 +726,16 @@ class LevelManager:
                     "No users found in the database for this server."
                 )
                 return
+
             changed_count = 0
+            users_scanned = 0
             for user in users_data:
                 member = interaction.guild.get_member(int(user["user_id"]))
                 if member:
-                    _, roles_changed = await self.upgrade_user_roles(
-                        member, user["level"]
-                    )
-                    if roles_changed:
+                    users_scanned += 1
+                    if await self.upgrade_user_roles(member, user["level"]):
                         changed_count += 1
+
             await interaction.followup.send(
-                f"🔄 Role synchronization complete! {changed_count} users had their roles updated."
+                f"🔄 Role synchronization complete!\n- Scanned {users_scanned} members.\n- Updated roles for {changed_count} members."
             )
