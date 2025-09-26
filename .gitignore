@@ -8,10 +8,12 @@ __pycache__/
 
 # Environment variables
 Supporter_BOT/Data_Files/.env
+Tester/Data_Files/.env
 
 # Local data files that the bot generates
 # It's good practice to let the bot create these on a new setup
-Data_Files/*.json
+Supporter_BOT/Data_Files/*.json
+Tester/Data_Files/*.json
 
 # IDE and OS files
 .idea/

@@ -11,106 +11,134 @@ from supabase import create_client, Client
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Define the IST timezone for conversions
+IST = timezone(timedelta(hours=5, minutes=30))
+
 
 # A helper function for printing debug messages with a timestamp
 def dprint(*args, **kwargs):
     """A helper function for printing debug messages."""
-    print(f"[{datetime.now(timezone.utc).isoformat()}] [YOUTUBE_API]", *args, **kwargs)
+    print(f"[{datetime.now(IST).isoformat()}] [YOUTUBE_API]", *args, **kwargs)
 
 
 class YouTubeManager:
     """Manages YouTube notifications using the Data API v3."""
 
     def __init__(self, bot: commands.Bot):
-        """
-        Initializes the YouTubeManager, setting up connections to Supabase and the YouTube API.
-        """
         self.bot = bot
 
-        # Initialize Supabase Client
         sup_url = os.getenv("SUPABASE_URL")
         sup_key = os.getenv("SUPABASE_KEY")
         if not sup_url or not sup_key:
-            raise ValueError(
-                "Supabase URL or Key not found in .env. Please check your configuration."
-            )
+            raise ValueError("Supabase URL or Key not found in .env.")
         self.supabase: Client = create_client(sup_url, sup_key)
 
-        # Initialize YouTube API Client
         api_key = os.getenv("YOUTUBE_API_KEY")
         if not api_key:
-            raise ValueError(
-                "YOUTUBE_API_KEY not found in .env. Please get a key from Google Cloud Console."
-            )
+            raise ValueError("YOUTUBE_API_KEY not found in .env.")
         self.youtube = build("youtube", "v3", developerKey=api_key)
 
-        # Cache for last known video ID to prevent duplicate notifications
-        self.latest_video_ids = {}  # Format: { "yt_channel_id": "video_id" }
+        # Cache stores both video ID and its status: { "yt_channel_id": {"id": "...", "status": "..."} }
+        self.channel_cache = {}
         dprint("YouTubeManager class has been initialized.")
 
     async def start(self):
         """Initializes the manager, loads data, and starts the background task."""
-        await self._load_latest_videos_from_db()
+        await self._load_cache_from_db()
         self.check_for_videos.start()
         dprint("YouTube Notification background task started.")
 
-    async def _load_latest_videos_from_db(self):
-        """Loads the last known video ID for each tracked channel from the database into the cache."""
+    async def _load_cache_from_db(self):
+        """Loads the last known video ID and status for each channel from the DB into the local cache."""
         try:
             response = (
                 self.supabase.table("youtube_notifications")
-                .select("yt_channel_id, latest_video_id")
+                .select("yt_channel_id, latest_video_id, last_video_status")
                 .execute()
             )
             if response.data:
                 for item in response.data:
-                    self.latest_video_ids[item["yt_channel_id"]] = item.get(
-                        "latest_video_id"
-                    )
+                    self.channel_cache[item["yt_channel_id"]] = {
+                        "id": item.get("latest_video_id"),
+                        "status": item.get("last_video_status"),
+                    }
                 dprint(
-                    f"Loaded {len(self.latest_video_ids)} channels from the database into cache."
+                    f"Loaded {len(self.channel_cache)} channels from the database into cache."
                 )
         except Exception as e:
-            dprint(f"Error loading latest videos from DB: {e}")
+            dprint(f"Error loading cache from DB: {e}")
 
     @tasks.loop(minutes=15)
     async def check_for_videos(self):
-        # ... (This entire function remains unchanged) ...
+        """The main background loop that checks for new videos and status changes."""
         try:
             configs = (
                 self.supabase.table("youtube_notifications").select("*").execute().data
             )
             if not configs:
                 return
+
             for config in configs:
                 yt_channel_id = config["yt_channel_id"]
                 try:
-                    request = self.youtube.search().list(
+                    search_request = self.youtube.search().list(
                         part="snippet",
                         channelId=yt_channel_id,
                         maxResults=1,
                         order="date",
                         type="video",
                     )
-                    api_response = request.execute()
-                    if not api_response.get("items"):
+                    search_response = search_request.execute()
+                    if not search_response.get("items"):
                         continue
-                    latest_item = api_response["items"][0]
+
+                    latest_item = search_response["items"][0]
                     video_id = latest_item["id"]["videoId"]
-                    last_known_id = self.latest_video_ids.get(yt_channel_id)
-                    published_at_str = latest_item["snippet"]["publishedAt"]
-                    published_at = datetime.fromisoformat(
-                        published_at_str.replace("Z", "+00:00")
+                    video_title = latest_item["snippet"]["title"]
+                    event_type = latest_item["snippet"].get(
+                        "liveBroadcastContent", "none"
                     )
-                    if video_id != last_known_id and (
-                        datetime.now(timezone.utc) - published_at
-                    ) < timedelta(days=1):
-                        dprint(f"New activity found for {yt_channel_id}: {video_id}")
-                        self.latest_video_ids[yt_channel_id] = video_id
-                        self.supabase.table("youtube_notifications").update(
-                            {"latest_video_id": video_id}
-                        ).eq("yt_channel_id", yt_channel_id).execute()
+
+                    cached_data = self.channel_cache.get(
+                        yt_channel_id, {"id": None, "status": None}
+                    )
+                    last_known_id = cached_data.get("id")
+                    last_known_status = cached_data.get("status")
+
+                    should_notify = False
+                    if video_id != last_known_id:
+                        should_notify = True
+                    elif (
+                        video_id == last_known_id
+                        and event_type == "live"
+                        and last_known_status == "upcoming"
+                    ):
+                        should_notify = True
+
+                    if should_notify:
+                        dprint(
+                            f"New activity for {yt_channel_id}: ID={video_id}, Status={event_type}."
+                        )
                         await self.send_notification(config, latest_item)
+
+                        title_preview = " ".join(video_title.split()[:3])
+
+                        self.supabase.table("youtube_notifications").update(
+                            {
+                                "latest_video_id": video_id,
+                                "last_video_status": event_type,
+                                "latest_video_title_preview": title_preview,
+                                "last_updated_at": datetime.now(
+                                    timezone.utc
+                                ).isoformat(),
+                            }
+                        ).eq("yt_channel_id", yt_channel_id).execute()
+
+                        self.channel_cache[yt_channel_id] = {
+                            "id": video_id,
+                            "status": event_type,
+                        }
+
                 except HttpError as e:
                     dprint(f"An HTTP Error occurred for channel {yt_channel_id}: {e}")
                 except Exception as e:
@@ -121,38 +149,59 @@ class YouTubeManager:
             dprint(f"A critical error occurred in the main check_for_videos loop: {e}")
 
     async def send_notification(self, config: dict, item: dict):
-        # ... (This entire function remains unchanged) ...
+        """Formats and sends the notification message, including premiere times."""
         guild = self.bot.get_guild(int(config["guild_id"]))
         if not guild:
             return
         channel = guild.get_channel(int(config["discord_channel_id"]))
         if not channel:
             return
-        role_to_mention = (
+
+        role = (
             guild.get_role(int(config.get("role_id")))
             if config.get("role_id")
             else None
         )
+        mention = role.mention if role else ""
+
         snippet = item["snippet"]
         video_id = item["id"]["videoId"]
         video_title = snippet["title"]
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        event_type = snippet.get("liveBroadcastContent", "none")
-        if event_type == "live":
-            activity = "🔴 is LIVE now!"
-        elif event_type == "upcoming":
-            activity = "has scheduled a Premiere!"
-        else:
-            activity = "uploaded a new Video!"
         channel_name = snippet["channelTitle"]
-        mention = role_to_mention.mention if role_to_mention else ""
-        message = f"📢 {mention} Hey everyone! **{channel_name}** {activity}\n\n**{video_title}**\n{video_url}"
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+        event_type = snippet.get("liveBroadcastContent", "none")
+        activity_line = ""
+
+        if event_type == "upcoming":
+            try:
+                video_request = self.youtube.videos().list(
+                    part="liveStreamingDetails", id=video_id
+                )
+                video_response = video_request.execute()
+                details = video_response["items"][0]["liveStreamingDetails"]
+                start_time_utc_str = details["scheduledStartTime"]
+                start_time_utc = datetime.fromisoformat(
+                    start_time_utc_str.replace("Z", "+00:00")
+                )
+                start_time_ist = start_time_utc.astimezone(IST)
+                time_str = start_time_ist.strftime("%d %B, %Y at %H:%M IST")
+                activity_line = f"has scheduled a new Premiere:\n*Starts on {time_str}*"
+            except Exception as e:
+                dprint(f"Could not fetch premiere time for {video_id}: {e}")
+                activity_line = "has scheduled a new Premiere"
+
+        elif event_type == "live":
+            activity_line = "is now LIVE"
+        else:  # 'none'
+            activity_line = "just uploaded a new video"
+
+        message = f"Hey {mention}! **{channel_name}** {activity_line}:\n\n**{video_title}**\n{video_url}"
+
         try:
             await channel.send(message)
         except discord.Forbidden:
-            dprint(
-                f"Error: No permission to send messages in channel {channel.id} (Guild: {guild.id})"
-            )
+            dprint(f"Error: No permission to send messages in channel {channel.id}")
 
     @check_for_videos.before_loop
     async def before_check(self):
@@ -161,10 +210,9 @@ class YouTubeManager:
     def register_commands(self):
         """Registers all slash commands for the YouTube feature."""
 
-        # ========= NEW COMMAND ADDED HERE =========
         @self.bot.tree.command(
             name="find-youtube-channel-id",
-            description="Find the Channel ID for a YouTube username or handle (e.g., @xyzvlog).",
+            description="Find the Channel ID for a YouTube username or handle.",
         )
         @app_commands.describe(
             username_or_handle="The @handle or custom username of the YouTube channel."
@@ -174,30 +222,26 @@ class YouTubeManager:
         ):
             await interaction.response.defer(ephemeral=True)
             try:
-                # Use the search API to find a channel by its name/handle
                 request = self.youtube.search().list(
                     part="snippet", q=username_or_handle, type="channel", maxResults=1
                 )
                 response = request.execute()
-
                 if not response.get("items"):
                     await interaction.followup.send(
-                        f"❌ Could not find a channel with the name or handle `{username_or_handle}`. Please check the spelling.",
+                        f"❌ Could not find a channel with the name or handle `{username_or_handle}`.",
                         ephemeral=True,
                     )
                     return
 
-                # Extract info from the API response to show the user
                 channel_item = response["items"][0]
                 channel_id = channel_item["id"]["channelId"]
                 channel_title = channel_item["snippet"]["title"]
                 thumbnail_url = channel_item["snippet"]["thumbnails"]["default"]["url"]
 
-                # Create an embed for a clean response
                 embed = discord.Embed(
                     title="🔍 YouTube Channel Finder",
-                    description=f"Found a channel that best matches your query.",
-                    color=0xFF0000,  # YouTube Red
+                    description="Found a channel that best matches your query.",
+                    color=0xFF0000,
                 )
                 embed.set_thumbnail(url=thumbnail_url)
                 embed.add_field(name="Channel Name", value=channel_title, inline=False)
@@ -205,32 +249,18 @@ class YouTubeManager:
                     name="Channel ID", value=f"`{channel_id}`", inline=False
                 )
                 embed.set_footer(
-                    text="Copy the Channel ID above to use in the /setup-youtube-notifications command."
+                    text="Copy the Channel ID to use in /setup-youtube-notifications."
                 )
-
                 await interaction.followup.send(embed=embed, ephemeral=True)
-
-            except HttpError as e:
-                dprint(f"YouTube API HTTP Error during channel search: {e}")
-                await interaction.followup.send(
-                    "❌ An error occurred while communicating with the YouTube API. The API key might be invalid or the quota may have been exceeded.",
-                    ephemeral=True,
-                )
             except Exception as e:
                 dprint(f"Error during find-channel-id command: {e}")
                 await interaction.followup.send(
-                    "❌ An unexpected error occurred. Please check the bot's console for details.",
-                    ephemeral=True,
+                    "❌ An unexpected error occurred.", ephemeral=True
                 )
 
         @self.bot.tree.command(
             name="setup-youtube-notifications",
             description="Set up notifications for a YouTube channel.",
-        )
-        @app_commands.describe(
-            youtube_channel_id="The ID of the YouTube channel (e.g., UC-lHJZR3Gqxm24_Vd_AJ5Yw)",
-            notification_channel="The Discord channel where notifications will be sent.",
-            role_to_mention="The role to mention in the notification message.",
         )
         @app_commands.checks.has_permissions(administrator=True)
         async def setup_youtube_notifications(
@@ -239,15 +269,39 @@ class YouTubeManager:
             notification_channel: discord.TextChannel,
             role_to_mention: discord.Role,
         ):
-            # ... (This command remains unchanged) ...
             await interaction.response.defer(ephemeral=True)
             if not youtube_channel_id.startswith("UC"):
                 await interaction.followup.send(
-                    "❌ Invalid YouTube Channel ID format. A valid ID typically starts with 'UC'.",
-                    ephemeral=True,
+                    "❌ Invalid YouTube Channel ID format.", ephemeral=True
                 )
                 return
+
             try:
+                search_request = self.youtube.search().list(
+                    part="snippet",
+                    channelId=youtube_channel_id,
+                    maxResults=1,
+                    order="date",
+                    type="video",
+                )
+                api_response = search_request.execute()
+
+                latest_video_id, latest_video_status, yt_channel_name, title_preview = (
+                    None,
+                    None,
+                    "Unknown Channel",
+                    None,
+                )
+
+                if api_response.get("items"):
+                    item = api_response["items"][0]
+                    latest_video_id = item["id"]["videoId"]
+                    latest_video_status = item["snippet"].get(
+                        "liveBroadcastContent", "none"
+                    )
+                    yt_channel_name = item["snippet"]["channelTitle"]
+                    title_preview = " ".join(item["snippet"]["title"].split()[:3])
+
                 self.supabase.table("youtube_notifications").upsert(
                     {
                         "guild_id": str(interaction.guild.id),
@@ -257,24 +311,21 @@ class YouTubeManager:
                         "channel_name": notification_channel.name,
                         "role_id": str(role_to_mention.id),
                         "role_name": role_to_mention.name,
+                        "latest_video_id": latest_video_id,
+                        "last_video_status": latest_video_status,
+                        "yt_channel_name": yt_channel_name,
+                        "latest_video_title_preview": title_preview,
+                        "last_updated_at": datetime.now(timezone.utc).isoformat(),
                     }
                 ).execute()
-                request = self.youtube.search().list(
-                    part="snippet",
-                    channelId=youtube_channel_id,
-                    maxResults=1,
-                    order="date",
-                    type="video",
-                )
-                api_response = request.execute()
-                if api_response.get("items"):
-                    video_id = api_response["items"][0]["id"]["videoId"]
-                    self.latest_video_ids[youtube_channel_id] = video_id
-                    self.supabase.table("youtube_notifications").update(
-                        {"latest_video_id": video_id}
-                    ).eq("yt_channel_id", youtube_channel_id).execute()
+
+                self.channel_cache[youtube_channel_id] = {
+                    "id": latest_video_id,
+                    "status": latest_video_status,
+                }
+
                 await interaction.followup.send(
-                    f"✅ Success! Notifications are configured for `{youtube_channel_id}`.",
+                    f"✅ Success! Notifications are configured for **{yt_channel_name}**.",
                     ephemeral=True,
                 )
             except Exception as e:
@@ -287,14 +338,10 @@ class YouTubeManager:
             name="disable-youtube-notifications",
             description="Disable YouTube notifications for a specific channel.",
         )
-        @app_commands.describe(
-            youtube_channel_id="The YouTube channel ID to disable notifications for."
-        )
         @app_commands.checks.has_permissions(administrator=True)
         async def disable_youtube_notifications(
             interaction: discord.Interaction, youtube_channel_id: str
         ):
-            # ... (This command remains unchanged) ...
             await interaction.response.defer(ephemeral=True)
             try:
                 result = (
@@ -309,14 +356,14 @@ class YouTubeManager:
                     .execute()
                 )
                 if result.data:
-                    self.latest_video_ids.pop(youtube_channel_id, None)
+                    self.channel_cache.pop(youtube_channel_id, None)
                     await interaction.followup.send(
                         f"✅ Notifications for `{youtube_channel_id}` have been disabled.",
                         ephemeral=True,
                     )
                 else:
                     await interaction.followup.send(
-                        "❌ No configuration was found for that YouTube channel ID on this server.",
+                        "❌ No configuration was found for that YouTube channel ID.",
                         ephemeral=True,
                     )
             except Exception as e:
