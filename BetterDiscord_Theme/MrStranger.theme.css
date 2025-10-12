@@ -1,0 +1,119 @@
+/**
+ * @name MrStranger Readable Edition
+ * @author MrStranger & ChatGPT
+ * @version 6.0.2
+ * @description Transparent video background with readable content panes (glass UI with proper contrast). Works with NotAnotherAnimeTheme + your video plugin.
+ * @source https://github.com/puckzxz/NotAnotherAnimeTheme
+ */
+
+@import url(https://puckzxz.github.io/NotAnotherAnimeTheme/build/v3/naat.v3.css);
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
+:root {
+  /* Keep NAAT from painting its own wallpaper (your video plugin handles bg) */
+  --theme-background-image: none !important;
+
+  /* Accent color */
+  --main-theme-color: #00e6b8;
+
+  /* >>> KEY FIX: raise base opacity so text has contrast <<< */
+  --theme-transparency: rgba(0, 0, 0, 0.58) !important; /* 0.55–0.70 is a good range */
+
+  /* Optional: a bit wider server list */
+  --server-listing-width: 112px;
+}
+
+/* Use a clean, readable font */
+*,
+:root,
+body {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
+}
+
+/* Let the video show through the app shell */
+html, body, .app-3xd6d0, .bg-1QIAus {
+  background: transparent !important;
+}
+
+/* Robust coloring via Discord CSS variables (works across updates) */
+.theme-dark, .theme-light {
+  /* Background surfaces */
+  --background-primary: rgba(0,0,0,.58);
+  --background-secondary: rgba(0,0,0,.52);
+  --background-secondary-alt: rgba(0,0,0,.52);
+  --background-tertiary: rgba(0,0,0,.50);
+  --channeltextarea-background: rgba(0,0,0,.55);
+  --background-floating: rgba(0,0,0,.72);
+  --modal-background: rgba(0,0,0,.72);
+  --deprecated-card-bg: rgba(0,0,0,.58);
+  --deprecated-store-bg: rgba(0,0,0,.58);
+
+  /* Text & interactive colors */
+  --text-normal: #ffffff;
+  --text-muted: #d9d9d9;
+  --header-primary: #ffffff;
+  --header-secondary: #d9d9d9;
+  --interactive-normal: #dcdcdc;
+  --interactive-hover: #ffffff;
+  --interactive-active: #ffffff;
+  --channels-default: #cfcfcf;
+
+  /* Subtle borders */
+  --background-modifier-accent: rgba(255,255,255,.08);
+}
+
+/* So it actually looks like panes (rounded + blur) */
+nav[aria-label="Servers"],
+nav[aria-label="Channels"],
+[role="main"],
+aside[aria-label="Members"],
+section[aria-label="User area"],
+.container-ZMc96U,
+.sidebar-1tnWFu,
+.chat-2ZfjoI,
+.panels-3wFtMD {
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0,0,0,.35);
+}
+
+/* Make selected/active items pop with the accent */
+a,
+[class*="modeSelected"] .name-28HaxV,
+[class*="selected"] .name-28HaxV,
+[class*="selected"] [class*="name"],
+[class*="selected"] [class*="title"] {
+  color: var(--main-theme-color) !important;
+}
+
+/* Remove any leftover text shadows that reduce clarity */
+[class*="messageContent"],
+[class*="markup"],
+[class*="username"],
+[class*="header"],
+[class*="name"],
+[class*="text"],
+[class*="title"] {
+  text-shadow: none !important;
+}
+
+/* Tweak scrollbars for visibility */
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255,255,255,.25) !important;
+  border-radius: 8px !important;
+}
+::-webkit-scrollbar-track { background: transparent !important; }
+
+/* Tiny signature (delete if you prefer) */
+body::after {
+  content: "MrStranger • Readable Edition";
+  position: fixed;
+  bottom: 10px;
+  right: 12px;
+  font-size: 12px;
+  color: var(--main-theme-color);
+  text-shadow: 0 0 5px #000;
+  pointer-events: none;
+  opacity: .8;
+}

@@ -90,7 +90,7 @@ All bot interactions are handled through slash commands available by typing `/` 
 ## 📂 Project Structure
 
 ``` Files Structure
-Supporter_BOT/
+Tester/
 ├── run_supporter.py          # Main startup script to run the bot.
 ├── Python_Files/             # Contains all core bot modules.
 │   ├── supporter.py          # Main bot file, event handling, and command registration.
