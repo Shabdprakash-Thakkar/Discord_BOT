@@ -1,0 +1,104 @@
+html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+h1:focus {
+    outline: none;
+}
+
+a, .btn-link {
+    color: #0071c1;
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: #1b6ec2;
+    border-color: #1861ac;
+}
+
+.content {
+    padding-top: 1.1rem;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid red;
+}
+
+.validation-message {
+    color: red;
+}
+
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MS4wODUgOTQuMDcyIDI5MS4wODUgOTQuNjcxIDI5MS4wODUgOTUuODg0IDI5MC4xNDEgOTYuODA0IDI4OC45NDIgOTYuODA0IDI4Ny43NDMgOTYuODA0IDI4Ni44IDI1LjgyIDI4Ni44IDk0LjYxNyAyODYuOCA5NC4wNzIgMjg2Ljg0MyA5My41MjIgMjg2LjkxNiA5My4wNTJIMjYxLjE4NiAyNjEuMzA0IDkzLjA1MiAyNjEuNTI1IDkzLjUyMiAyNjEuNzI5IDk0LjA3MiAyNjEuNzI5IDk0LjYxNyAyNjEuNzI5IDk1LjgyIDI2MC43ODYgOTYuODA0IDI1OS41ODcgOTYuODA0IDI1OC4zODggOTYuODA0IDI1Ny40NDQgOTUuODg0IDI1Ny40NDQgOTQuNjcxIDI1Ny40NDQgOTQuMDcyIDI1Ny42NTIgOTMuNTEzIDI1Ny44NzMgOTIuOTk2IDI1Ny45NjEgOTIuNzk1IDI1OC40MDggOTIuMTgzMSAyODEuNDYgNTMuNjI4MyAyODEuOTQ4IDUyLjc5ODcgMjgyLjM5NCA1Mi4yNjU4IDI4My4xODYgNTEgMjgzLjQ5NSA1MSAyODQuMTgzIDUxIDI4NC44NjUgNTEuMzcxIDI4NS4zNjIgNTIuMDYxMkwyODUuNzQ4IDUyLjYwOTQgMjY2LjYwNiA5MS4xNDYxIDI2My4xNDkgOTIuOTk2QzI2My4zNjggOTMuNDg5IDI2My41NjcgOTQuMDQxIDI2My41NjcgOTQuNjcxIDI2My41NjcgOTUuODg0IDI2Mi42MjMgOTYuODA0IDI2MS40MjQgOTYuODA0IDI2MC4yMjUgOTYuODA0IDI1OS4yODEgOTUuODIgMjU5LjI4MSA5NC42MTcgMjU5LjI4MSA5NC4wNzIgMjU5LjMyNCA5My41MjIgMjU5LjM5NyA5My4wNTJIMjM1LjE2NiAyMzUuMzA0IDkzLjA1MiAyMzUuNTI1IDkzLjUyMiAyMzUuNzI5IDk0LjA3MiAyMzUuNzI5IDk0LjYxNyAyMzUuNzI5IDk1LjgyIDIzNC43ODYgOTYuODA0IDIzMy41ODcgOTYuODA0IDIzMi4zODggOTYuODA0IDIzMS40NDQgOTUuODg0IDIzMS40NDQgOTQuNjcxIDIzMS40NDQgOTQuMDcyIDIzMS42NTIgOTMuNTEzIDIzMS44NzMgOTIuOTk2IDIzMS45NjEgOTIuNzk1IDIyLjQwOCA5Mi4xODMxIDI0NS40NjAgNTMuNjI4MyAyNDUuOTQ4IDUyLjc5ODcgMjQ2LjM5NCA1Mi4yNjU4IDI0Ny4xODYgNTEgMjQ3LjQ5NSA1MSAyNDguMTgzIDUxIDI0OC44NjUgNTEuMzcxIDI0OS4zNjIgNTIuMDYxMkwyNDkuNzQ4IDUyLjYwOTQgMjY4LjYwNiA5MS4xNDYxIDI2NS4xNDkgOTIuOTk2QzI2NS4zNjggOTMuNDg5IDI2NS41NjcgOTQuMDQxIDI2NS41NjcgOTQuNjcxIDI2NS41NjcgOTUuODg0IDI2NC42MjMgOTYuODA0IDI2My40MjQgOTYuODA0IDI2Mi4yMjUgOTYuODA0IDI2MS4yODEgOTUuODIgMjYxLjI4MSA5NC42MTcgMjYxLjI4MSA5NC4wNzIgMjYxLjMyNCA5My41MjIgMjYxLjM5NyA5My4wNTIgTDI2My41MDYgNTFaIiBmaWxsPSIjRkU1NzA3MyIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9nPjwvc3ZnPg==) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+    .blazor-error-boundary::after {
+        content: "An error has occurred."
+    }
+
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+}
+
+.sidebar {
+    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    width: 250px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+}
+
+main {
+    flex: 1;
+}
+
+.top-row {
+    background-color: #f7f7f7;
+    border-bottom: 1px solid #d6d5d5;
+    justify-content: flex-end;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+}
+
+    .top-row ::deep a, .top-row ::deep .btn-link {
+        white-space: nowrap;
+        margin-left: 1.5rem;
+        text-decoration: none;
+    }
+
+    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
+        text-decoration: underline;
+    }
+
+    .top-row ::deep a:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }

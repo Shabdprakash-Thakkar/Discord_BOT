@@ -1,0 +1,86 @@
+@page "/notext/{GuildId}"
+@using Dashboard.Frontend.Models
+@inject HttpClient Http
+
+<h1>No-Text Channels</h1>
+
+@if (channels == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h2>Configured Channels</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Channel ID</th>
+                <th>Redirect Channel ID</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var channel in channels)
+            {
+                <tr>
+                    <td>@channel.channel_id</td>
+                    <td>@channel.redirect_channel_id</td>
+                    <td><button class="btn btn-danger" @onclick="() => RemoveChannel(channel.channel_id)">Remove</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <hr />
+
+    <h2>Add a new No-Text Channel</h2>
+    <div class="form-group">
+        <label>Channel ID</label>
+        <input class="form-control" @bind="newChannel.channel_id" />
+    </div>
+    <div class="form-group">
+        <label>Redirect Channel ID</label>
+        <input class="form-control" @bind="newChannel.redirect_channel_id" />
+    </div>
+    <button class="btn btn-primary" @onclick="AddChannel">Add</button>
+}
+
+@code {
+    [Parameter]
+    public string? GuildId { get; set; }
+
+    private NoTextChannel[]? channels;
+    private NoTextChannel newChannel = new NoTextChannel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadChannels();
+    }
+
+    private async Task LoadChannels()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            channels = await Http.GetFromJsonAsync<NoTextChannel[]>($"api/guilds/{GuildId}/notext/channels");
+        }
+    }
+
+    private async Task AddChannel()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            await Http.PostAsJsonAsync($"api/guilds/{GuildId}/notext/channels", newChannel);
+            newChannel = new NoTextChannel();
+            await LoadChannels();
+        }
+    }
+
+    private async Task RemoveChannel(int channelId)
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            await Http.DeleteAsync($"api/guilds/{GuildId}/notext/channels/{channelId}");
+            await LoadChannels();
+        }
+    }
+}

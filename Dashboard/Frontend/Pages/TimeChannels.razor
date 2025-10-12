@@ -1,0 +1,69 @@
+@page "/timechannels/{GuildId}"
+@using Dashboard.Frontend.Models
+@inject HttpClient Http
+
+<h1>Time Channels</h1>
+
+@if (channels == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="form-group">
+        <label>Date Channel ID</label>
+        <input class="form-control" @bind="dateChannelId" />
+    </div>
+    <div class="form-group">
+        <label>India Channel ID</label>
+        <input class="form-control" @bind="indiaChannelId" />
+    </div>
+    <div class="form-group">
+        <label>Japan Channel ID</label>
+        <input class="form-control" @bind="japanChannelId" />
+    </div>
+    <button class="btn btn-primary" @onclick="SaveChanges">Save Changes</button>
+}
+
+@code {
+    [Parameter]
+    public string? GuildId { get; set; }
+
+    private TimeChannels? channels;
+    private int dateChannelId;
+    private int indiaChannelId;
+    private int japanChannelId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            try
+            {
+                channels = await Http.GetFromJsonAsync<TimeChannels>($"api/guilds/{GuildId}/timechannels");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
+            if (channels != null)
+            {
+                dateChannelId = channels.date_channel_id;
+                indiaChannelId = channels.india_channel_id;
+                japanChannelId = channels.japan_channel_id;
+            }
+        }
+    }
+
+    private async Task SaveChanges()
+    {
+        if (channels != null && !string.IsNullOrEmpty(GuildId))
+        {
+            channels.date_channel_id = dateChannelId;
+            channels.india_channel_id = indiaChannelId;
+            channels.japan_channel_id = japanChannelId;
+            await Http.PostAsJsonAsync($"api/guilds/{GuildId}/timechannels", channels);
+        }
+    }
+}
