@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  python-api:
+    build:
+      context: ./Dashboard/PythonAPI
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    ports:
+      - "8000:8000"
+    networks:
+      - dashboard-network
+
+  dashboard-backend:
+    build:
+      context: ./Dashboard/Backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - python-api
+    environment:
+      - ConnectionStrings__DefaultConnection=${DBCONNECTIONSTRING}
+      - PythonApiBaseUrl=http://python-api:8000
+    networks:
+      - dashboard-network
+
+  dashboard-frontend:
+    build:
+      context: ./Dashboard/Frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - dashboard-backend
+    networks:
+      - dashboard-network
+
+networks:
+  dashboard-network:
+    driver: bridge
