@@ -15,7 +15,10 @@ from Python_Files.level import LevelManager
 from Python_Files.date_and_time import DateTimeManager
 from Python_Files.no_text import NoTextManager
 from Python_Files.help import HelpManager
-from Python_Files.youtube_notification import YouTubeManager 
+from Python_Files.youtube_notification import YouTubeManager
+from Python_Files.owner_actions import (
+    OwnerActionsManager,
+)  # <--- IMPORT THE NEW MANAGER
 
 # Get the base directory for data files
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,8 +42,9 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 datetime_manager = DateTimeManager(bot, DATA_DIR)
 notext_manager = NoTextManager(bot, DATA_DIR)
 level_manager = LevelManager(bot, DATA_DIR)
-youtube_manager = YouTubeManager(bot)  
+youtube_manager = YouTubeManager(bot)
 help_manager = HelpManager(bot)
+owner_manager = OwnerActionsManager(bot)  # <--- INITIALIZE THE NEW MANAGER
 
 
 @bot.event
@@ -49,13 +53,14 @@ async def on_ready():
     await datetime_manager.start()
     await notext_manager.start()
     await level_manager.start()
-    await youtube_manager.start()  
+    await youtube_manager.start()
 
     # Register all commands from manager files
     level_manager.register_commands()
     notext_manager.register_commands()
-    youtube_manager.register_commands()  
+    youtube_manager.register_commands()
     help_manager.register_commands()
+    owner_manager.register_commands()  # <--- REGISTER THE NEW COMMANDS
 
     # Sync slash commands globally
     try:
@@ -64,7 +69,42 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
+    # ========================= NEW CODE START =========================
+    # Print the list of servers to the console
+    print("-" * 30)
+    print(f"Bot is connected to {len(bot.guilds)} server(s):")
+    for guild in bot.guilds:
+        print(f"- {guild.name} (ID: {guild.id})")
+    print("-" * 30)
+    # ========================== NEW CODE END ==========================
+
     print("🚀 Bot is fully ready!")
+
+
+# ========================= NEW CODE START =========================
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Event that triggers when the bot joins a new server."""
+    print(f"📥 Joined a new server: {guild.name} (ID: {guild.id})")
+
+    # Check if the guild is on the ban list
+    if await owner_manager.is_guild_banned(guild.id):
+        print(
+            f"🚫 Attempted to join a banned server: {guild.name}. Leaving immediately."
+        )
+        try:
+            # Try to send a message to the owner if possible
+            if guild.owner:
+                await guild.owner.send(
+                    "This bot is not permitted to be in this server and has been removed."
+                )
+        except discord.Forbidden:
+            print("Could not notify the server owner about the ban.")
+        finally:
+            await guild.leave()
+
+
+# ========================== NEW CODE END ==========================
 
 
 @bot.event
@@ -75,6 +115,12 @@ async def on_message(message):
     await notext_manager.handle_message(message)
     await level_manager.handle_message(message)
     await bot.process_commands(message)
+
+
+# ... (rest of your supporter.py file remains the same) ...
+# The /setup-time-channels, /setup-no-text, /remove-no-text,
+# /show-config, /serverlist, error handling, and run_bot functions
+# are all still here.
 
 
 # ===== SLASH COMMANDS DEFINED IN MAIN FILE =====
@@ -153,6 +199,34 @@ async def show_config(interaction: discord.Interaction):
 
     embed.set_footer(text=f"Server ID: {interaction.guild_id}")
     await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(
+    name="serverlist", description="Lists all servers the bot is in (Bot Owner only)."
+)
+async def serverlist(interaction: discord.Interaction):
+    # This is a security check. It ensures only the person who created the bot
+    # in the Discord Developer Portal can use this command.
+    if not await bot.is_owner(interaction.user):
+        await interaction.response.send_message(
+            "❌ You do not have permission to use this command.", ephemeral=True
+        )
+        return
+
+    # Defer the response to give the bot time to build the list, and make it private
+    await interaction.response.defer(ephemeral=True)
+
+    # Build a formatted string containing the server list
+    server_list_details = []
+    for guild in bot.guilds:
+        server_list_details.append(f"- **{guild.name}** (ID: `{guild.id}`)")
+
+    message_content = "\n".join(server_list_details)
+
+    # Send the final list back to the owner
+    await interaction.followup.send(
+        f"🔎 I am currently in the following **{len(bot.guilds)}** server(s):\n{message_content}"
+    )
 
 
 # ===== ERROR HANDLING =====

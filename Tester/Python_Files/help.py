@@ -45,7 +45,6 @@ class HelpManager:
                 inline=False,
             )
 
-            # --- UPDATED YOUTUBE SECTION ---
             embed.add_field(
                 name="📢 YouTube Notifications",
                 value=(
@@ -84,6 +83,19 @@ class HelpManager:
                 ),
                 inline=False,
             )
+
+            # Conditionally add the owner commands section
+            if await self.bot.is_owner(interaction.user):
+                embed.add_field(
+                    name="👑 Owner Commands",
+                    value=(
+                        "`/serverlist` → Lists all servers the bot is in\n"
+                        "`/leaveserver` → Force the bot to leave a server\n"
+                        "`/banguild` → Ban a server from using the bot\n"
+                        "`/unbanguild` → Unban a server"
+                    ),
+                    inline=False,
+                )
 
             embed.set_footer(
                 text=f"Server: {interaction.guild.name}",

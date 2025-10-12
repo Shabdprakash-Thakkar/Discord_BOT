@@ -12,7 +12,7 @@ A multi-functional Discord bot designed to automate server management and enhanc
 
 * **⏰ Live Time Channels:** Keep your server's international community synchronized with voice channels that automatically update their names to display the current date, India Standard Time (IST), and Japan Standard Time (JST).
 
-* **⚙️ Easy Configuration:** All features are managed through simple and intuitive slash commands. A dedicated `/show-config` command allows administrators to get a quick overview of all current bot settings for the server.
+* **⚙️ Easy Configuration & Control:** All features are managed through simple slash commands. A dedicated `/show-config` command allows administrators to get a quick overview of all bot settings, while owner-only commands provide full control over the bot's presence in different servers.
 
 ***
 
@@ -39,10 +39,14 @@ All bot interactions are handled through slash commands available by typing `/` 
 
 ### General Commands
 
-| Command           | Description                                                       | Permissions   |
-| :---------------- | :---------------------------------------------------------------- | :------------ |
-| `/help`           | Shows a list of all available bot commands.                       | Everyone      |
-| `/show-config`    | Displays the current configuration for time & no-text channels.   | Everyone      |
+| Command           | Description                                       | Permissions   |
+| :---------------- | :------------------------------------------------ | :------------ |
+| `/help`           | Shows a list of all available bot commands.       | Everyone      |
+| `/show-config`    | Displays the current configuration for the server.| Everyone      |
+| `/serverlist`     | Lists all servers the bot is in.                  | Bot Owner     |
+| `/leaveserver`    | Forces the bot to leave a server by ID.           | Bot Owner     |
+| `/banguild`       | Bans a server and makes the bot leave.            | Bot Owner     |
+| `/unbanguild`     | Unbans a server, allowing it to re-invite the bot.| Bot Owner     |
 
 ### Leveling Commands
 
@@ -94,6 +98,7 @@ Supporter_BOT/
 │   ├── no_text.py            # Handles media-only channel enforcement and bypass logic.
 │   ├── date_and_time.py      # Controls the automatic updates for time channels.
 │   ├── youtube_notification.py # Manages YouTube upload and stream notifications.
+│   ├── owner_actions.py      # Handles owner-exclusive commands like leaving/banning servers.
 │   └── help.py               # Manages the help command and its display.
 └── Data_Files/               # For configuration, data storage, and dependencies.
     ├── .env                  # Stores private credentials like bot token and database keys.
@@ -119,7 +124,7 @@ Download the project files to your computer. It is highly recommended to create 
 
 ### Step 3: Database Configuration
 
-The bot uses a database to store all persistent data. In your Database project's SQL Editor, you will need to create the required tables for the bot to function, including tables for `users`, `level_roles`, `level_notify_channel`, `last_notified_level`, `bypass_roles`, `auto_reset`, and `youtube_notifications`.
+The bot uses a database to store all persistent data. In your Database project's SQL Editor, you will need to create the required tables for the bot to function, including tables for `users`, `level_roles`, `level_notify_channel`, `last_notified_level`, `bypass_roles`, `auto_reset`, `youtube_notifications`, and `banned_guilds`.
 
 ### Step 4: Environment Variables
 
