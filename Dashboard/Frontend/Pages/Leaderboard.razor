@@ -1,0 +1,50 @@
+@page "/leaderboard/{GuildId}"
+@using Dashboard.Frontend.Models
+@inject HttpClient Http
+
+<h1>Leaderboard</h1>
+
+@if (leaderboard == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Rank</th>
+                <th>User</th>
+                <th>Level</th>
+                <th>XP</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < leaderboard.Length; i++)
+            {
+                var entry = leaderboard[i];
+                <tr>
+                    <td>@(i + 1)</td>
+                    <td>@entry.username</td>
+                    <td>@entry.level</td>
+                    <td>@entry.xp</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter]
+    public string? GuildId { get; set; }
+
+    private LeaderboardEntry[]? leaderboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            leaderboard = await Http.GetFromJsonAsync<LeaderboardEntry[]>($"api/leaderboard/{GuildId}");
+        }
+    }
+}

@@ -1,0 +1,94 @@
+@page "/youtubenotifications/{GuildId}"
+@using Dashboard.Frontend.Models
+@inject HttpClient Http
+
+<h1>YouTube Notifications</h1>
+
+@if (channels == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h2>Configured Channels</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Channel Name</th>
+                <th>Channel ID</th>
+                <th>Notification Channel ID</th>
+                <th>Role to Mention</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var channel in channels)
+            {
+                <tr>
+                    <td>@channel.yt_channel_name</td>
+                    <td>@channel.yt_channel_id</td>
+                    <td>@channel.discord_channel_id</td>
+                    <td>@channel.role_id</td>
+                    <td><button class="btn btn-danger" @onclick="() => RemoveChannel(channel.yt_channel_id)">Remove</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <hr />
+
+    <h2>Add a new YouTube Channel</h2>
+    <div class="form-group">
+        <label>YouTube Channel ID</label>
+        <input class="form-control" @bind="newChannel.yt_channel_id" />
+    </div>
+    <div class="form-group">
+        <label>Notification Channel ID</label>
+        <input class="form-control" @bind="newChannel.discord_channel_id" />
+    </div>
+    <div class="form-group">
+        <label>Role to Mention ID</label>
+        <input class="form-control" @bind="newChannel.role_id" />
+    </div>
+    <button class="btn btn-primary" @onclick="AddChannel">Add</button>
+}
+
+@code {
+    [Parameter]
+    public string? GuildId { get; set; }
+
+    private YouTubeChannel[]? channels;
+    private YouTubeChannel newChannel = new YouTubeChannel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadChannels();
+    }
+
+    private async Task LoadChannels()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            channels = await Http.GetFromJsonAsync<YouTubeChannel[]>($"api/guilds/{GuildId}/youtubenotifications");
+        }
+    }
+
+    private async Task AddChannel()
+    {
+        if (!string.IsNullOrEmpty(GuildId))
+        {
+            await Http.PostAsJsonAsync($"api/guilds/{GuildId}/youtubenotifications", newChannel);
+            newChannel = new YouTubeChannel();
+            await LoadChannels();
+        }
+    }
+
+    private async Task RemoveChannel(string? ytChannelId)
+    {
+        if (!string.IsNullOrEmpty(GuildId) && !string.IsNullOrEmpty(ytChannelId))
+        {
+            await Http.DeleteAsync($"api/guilds/{GuildId}/youtubenotifications/{ytChannelId}");
+            await LoadChannels();
+        }
+    }
+}
