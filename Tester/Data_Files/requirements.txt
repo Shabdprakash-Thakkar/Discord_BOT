@@ -1,6 +1,0 @@
-discord.py>=2.3.0
-python-dotenv>=1.0.0
-pytz>=2023.3
-supabase
-PyNaCl>=1.5.0
-google-api-python-client
