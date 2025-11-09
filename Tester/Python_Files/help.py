@@ -11,7 +11,7 @@ class HelpManager:
 
     def register_commands(self):
         @self.bot.tree.command(
-            name="help", description="Show instructions for moderators and users"
+            name="g1-help", description="Show instructions for moderators and users"
         )
         async def help_command(interaction: discord.Interaction):
             embed = discord.Embed(
@@ -24,12 +24,12 @@ class HelpManager:
             embed.add_field(
                 name="📊 Leveling System",
                 value=(
-                    "`/setup-level-reward` → Set role reward for a level\n"
-                    "`/level-reward-show` → Show configured level rewards\n"
-                    "`/notify-level-msg` → Set channel for level-up notifications\n"
-                    "`/level` → Check your or another user's level and XP\n"
-                    "`/leaderboard` → Show top 10 users\n"
-                    "`/upgrade-all-roles` → Manually sync roles for all users"
+                    "`/l1-level` → Check your or another user's level and XP\n"
+                    "`/l2-leaderboard` → Show top 10 users\n"
+                    "`/l3-setup-level-reward` → Set role reward for a level\n"
+                    "`/l4-level-reward-show` → Show configured level rewards\n"
+                    "`/l5-notify-level-msg` → Set channel for level-up notifications\n"
+                    "`/l10-upgrade-all-roles` → Manually sync roles for all users"
                 ),
                 inline=False,
             )
@@ -37,10 +37,10 @@ class HelpManager:
             embed.add_field(
                 name="♻️ XP Reset System",
                 value=(
-                    "`/set-auto-reset` → Set automatic XP reset schedule (1-365 days)\n"
-                    "`/show-auto-reset` → Show current auto-reset configuration\n"
-                    "`/stop-auto-reset` → Disable automatic XP reset\n"
-                    "`/reset-xp` → Manually reset all XP and roles"
+                    "`/l6-set-auto-reset` → Set automatic XP reset schedule (1-365 days)\n"
+                    "`/l7-show-auto-reset` → Show current auto-reset configuration\n"
+                    "`/l8-stop-auto-reset` → Disable automatic XP reset\n"
+                    "`/l9-reset-xp` → Manually reset all XP and roles"
                 ),
                 inline=False,
             )
@@ -48,9 +48,9 @@ class HelpManager:
             embed.add_field(
                 name="📢 YouTube Notifications",
                 value=(
-                    "`/find-youtube-channel-id` → Find a channel's ID from its username\n"
-                    "`/setup-youtube-notifications` → Set up notifications for a channel\n"
-                    "`/disable-youtube-notifications` → Stop notifications for a channel"
+                    "`/y1-find-youtube-channel-id` → Find a channel's ID from its username\n"
+                    "`/y2-setup-youtube-notifications` → Set up notifications for a channel\n"
+                    "`/y3-disable-youtube-notifications` → Stop notifications for a channel"
                 ),
                 inline=False,
             )
@@ -58,11 +58,22 @@ class HelpManager:
             embed.add_field(
                 name="🚫📝 No-Text Channels",
                 value=(
-                    "`/setup-no-text` → Configure a media-only channel\n"
-                    "`/remove-no-text` → Remove no-text restrictions\n"
-                    "`/bypass-no-text` → Allow a role to bypass restrictions\n"
-                    "`/show-bypass-roles` → Show roles that can bypass\n"
-                    "`/remove-bypass-role` → Remove a role's bypass ability"
+                    "`/n1-setup-no-text` → Configure a media-only channel\n"
+                    "`/n2-remove-no-text` → Remove no-text restrictions\n"
+                    "`/n3-bypass-no-text` → Allow a role to bypass restrictions\n"
+                    "`/n4-show-bypass-roles` → Show roles that can bypass\n"
+                    "`/n5-remove-bypass-role` → Remove a role's bypass ability"
+                ),
+                inline=False,
+            )
+
+            embed.add_field(
+                name="🔗 Link Restrictions",
+                value=(
+                    "`/n6-no-discord-link` → Delete Discord invite links (prevent server promotion)\n"
+                    "`/n7-no-links` → Delete ALL links silently (most restrictive)\n"
+                    "`/n8-remove-no-discord-link` → Remove Discord link restriction\n"
+                    "`/n9-remove-no-links` → Remove no-links restriction"
                 ),
                 inline=False,
             )
@@ -70,7 +81,7 @@ class HelpManager:
             embed.add_field(
                 name="⏰ Time & Date Channels",
                 value=(
-                    "`/setup-time-channels` → Set up date, India, and Japan time channels"
+                    "`/t1-setup-time-channels` → Set up date, India, and Japan time channels"
                 ),
                 inline=False,
             )
@@ -78,8 +89,8 @@ class HelpManager:
             embed.add_field(
                 name="⚙️ Configuration",
                 value=(
-                    "`/show-config` → Show current bot configuration for your server\n"
-                    "`/help` → Show this help message"
+                    "`/g1-help` → Show this help message\n"
+                    "`/g2-show-config` → Show current bot configuration for your server"
                 ),
                 inline=False,
             )
@@ -89,10 +100,10 @@ class HelpManager:
                 embed.add_field(
                     name="👑 Owner Commands",
                     value=(
-                        "`/serverlist` → Lists all servers the bot is in\n"
-                        "`/leaveserver` → Force the bot to leave a server\n"
-                        "`/banguild` → Ban a server from using the bot\n"
-                        "`/unbanguild` → Unban a server"
+                        "`/g3-serverlist` → Lists all servers the bot is in\n"
+                        "`/g4-leaveserver` → Force the bot to leave a server\n"
+                        "`/g5-banguild` → Ban a server from using the bot\n"
+                        "`/g6-unbanguild` → Unban a server"
                     ),
                     inline=False,
                 )

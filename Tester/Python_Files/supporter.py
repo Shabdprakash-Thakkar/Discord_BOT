@@ -85,7 +85,7 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     """Event that triggers when the bot joins a new server."""
-    print(f"📥 Joined a new server: {guild.name} (ID: {guild.id})")
+    print(f"🔥 Joined a new server: {guild.name} (ID: {guild.id})")
 
     # Check if the guild is on the ban list
     if await owner_manager.is_guild_banned(guild.id):
@@ -125,7 +125,7 @@ async def on_message(message):
 
 # ===== SLASH COMMANDS DEFINED IN MAIN FILE =====
 @bot.tree.command(
-    name="setup-time-channels",
+    name="t1-setup-time-channels",
     description="Set up date, India time, and Japan time channels",
 )
 async def setup_time_channels(
@@ -141,7 +141,7 @@ async def setup_time_channels(
 
 
 @bot.tree.command(
-    name="setup-no-text",
+    name="n1-setup-no-text",
     description="Set up a channel where only media/links are allowed",
 )
 async def setup_no_text(
@@ -154,7 +154,7 @@ async def setup_no_text(
 
 
 @bot.tree.command(
-    name="remove-no-text", description="Remove no-text restriction from a channel"
+    name="n2-remove-no-text", description="Remove no-text restriction from a channel"
 )
 async def remove_no_text(
     interaction: discord.Interaction, channel: discord.TextChannel
@@ -163,7 +163,7 @@ async def remove_no_text(
     await notext_manager.remove_channel(interaction, channel)
 
 
-@bot.tree.command(name="show-config", description="Show current bot configuration")
+@bot.tree.command(name="g2-show-config", description="Show current bot configuration")
 async def show_config(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     guild_id = str(interaction.guild_id)
@@ -197,12 +197,49 @@ async def show_config(interaction: discord.Interaction):
             name="🚫📝 No-Text Channels", value="❌ None configured", inline=False
         )
 
+    # Add no-discord-links channels from Supabase
+    try:
+        discord_links_data = (
+            notext_manager.supabase.table("no_discord_links_channels")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        if discord_links_data.data:
+            discord_links_info = ""
+            for row in discord_links_data.data:
+                ch_id = row["channel_id"]
+                discord_links_info += f"🚫 <#{ch_id}> (Discord invites blocked)\n"
+            embed.add_field(
+                name="🚫 No Discord Invites", value=discord_links_info, inline=False
+            )
+    except Exception as e:
+        print(f"❌ Error fetching no_discord_links config: {e}")
+
+    # Add no-links channels from Supabase
+    try:
+        no_links_data = (
+            notext_manager.supabase.table("no_links_channels")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        if no_links_data.data:
+            no_links_info = ""
+            for row in no_links_data.data:
+                ch_id = row["channel_id"]
+                no_links_info += f"🚫🔗 <#{ch_id}> (No links allowed)\n"
+            embed.add_field(name="🚫🔗 No Links", value=no_links_info, inline=False)
+    except Exception as e:
+        print(f"❌ Error fetching no_links config: {e}")
+
     embed.set_footer(text=f"Server ID: {interaction.guild_id}")
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(
-    name="serverlist", description="Lists all servers the bot is in (Bot Owner only)."
+    name="g3-serverlist",
+    description="Lists all servers the bot is in (Bot Owner only).",
 )
 async def serverlist(interaction: discord.Interaction):
     # This is a security check. It ensures only the person who created the bot

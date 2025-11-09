@@ -13,7 +13,11 @@ Tester/Data_Files/.env
 # Local data files that the bot generates
 # It's good practice to let the bot create these on a new setup
 Supporter_BOT/Data_Files/*.json
+Supporter_BOT/Data_Files/requirements.txt
+Supporter_BOT/Data_Files/SQL-Editor-Code-Supabase.txt
 Tester/Data_Files/*.json
+Tester/Data_Files/requirements.txt
+Tester/Data_Files/SQL-Editor-Code-Supabase.txt
 
 # IDE and OS files
 .idea/

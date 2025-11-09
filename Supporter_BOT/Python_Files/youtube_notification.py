@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timezone, timedelta
+import asyncio
 import os
 
 # Supabase and Google API Client libraries
@@ -15,9 +16,8 @@ from googleapiclient.errors import HttpError
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
-# A helper function for printing debug messages with a timestamp
+# Helper for consistent timestamped debug logging
 def dprint(*args, **kwargs):
-    """A helper function for printing debug messages."""
     print(f"[{datetime.now(IST).isoformat()}] [YOUTUBE_API]", *args, **kwargs)
 
 
@@ -38,8 +38,9 @@ class YouTubeManager:
             raise ValueError("YOUTUBE_API_KEY not found in .env.")
         self.youtube = build("youtube", "v3", developerKey=api_key)
 
-        # Cache stores both video ID and its status: { "yt_channel_id": {"id": "...", "status": "..."} }
+        # Cache structure: { "yt_channel_id": {"id": "latest_video_id", "status": "live/none/upcoming"} }
         self.channel_cache = {}
+        self.last_notified = {}  # cooldown tracker per channel
         dprint("YouTubeManager class has been initialized.")
 
     async def start(self):
@@ -70,7 +71,7 @@ class YouTubeManager:
 
     @tasks.loop(minutes=15)
     async def check_for_videos(self):
-        """The main background loop that checks for new videos and status changes."""
+        """Checks all configured channels for new videos or live events."""
         try:
             configs = (
                 self.supabase.table("youtube_notifications").select("*").execute().data
@@ -80,24 +81,29 @@ class YouTubeManager:
 
             for config in configs:
                 yt_channel_id = config["yt_channel_id"]
+
                 try:
-                    search_request = self.youtube.search().list(
-                        part="snippet",
-                        channelId=yt_channel_id,
-                        maxResults=1,
-                        order="date",
-                        type="video",
+                    search_response = (
+                        self.youtube.search()
+                        .list(
+                            part="snippet",
+                            channelId=yt_channel_id,
+                            maxResults=1,
+                            order="date",
+                            type="video",
+                        )
+                        .execute()
                     )
-                    search_response = search_request.execute()
+
                     if not search_response.get("items"):
                         continue
 
                     latest_item = search_response["items"][0]
                     video_id = latest_item["id"]["videoId"]
-                    video_title = latest_item["snippet"]["title"]
                     event_type = latest_item["snippet"].get(
                         "liveBroadcastContent", "none"
                     )
+                    video_title = latest_item["snippet"]["title"]
 
                     cached_data = self.channel_cache.get(
                         yt_channel_id, {"id": None, "status": None}
@@ -105,54 +111,83 @@ class YouTubeManager:
                     last_known_id = cached_data.get("id")
                     last_known_status = cached_data.get("status")
 
+                    dprint(
+                        f"Check {yt_channel_id}: DB={last_known_id}/{last_known_status}, API={video_id}/{event_type}"
+                    )
+
+                    # Skip if same ID and status (no new event)
+                    if video_id == last_known_id and event_type == last_known_status:
+                        continue
+
                     should_notify = False
+
+                    # New upload or different video ID
                     if video_id != last_known_id:
                         should_notify = True
+
+                    # Livestream started
                     elif (
                         video_id == last_known_id
                         and event_type == "live"
-                        and last_known_status == "upcoming"
+                        and last_known_status in ("upcoming", "none")
                     ):
                         should_notify = True
 
-                    if should_notify:
+                    # Cooldown (1 hour)
+                    now = datetime.now(timezone.utc)
+                    last_time = self.last_notified.get(yt_channel_id)
+                    if (
+                        should_notify
+                        and last_time
+                        and (now - last_time).total_seconds() < 3600
+                    ):
                         dprint(
-                            f"New activity for {yt_channel_id}: ID={video_id}, Status={event_type}."
+                            f"Skipping duplicate within cooldown for {yt_channel_id}"
                         )
-                        await self.send_notification(config, latest_item)
+                        should_notify = False
 
-                        title_preview = " ".join(video_title.split()[:3])
+                    if not should_notify:
+                        continue
 
-                        self.supabase.table("youtube_notifications").update(
-                            {
-                                "latest_video_id": video_id,
-                                "last_video_status": event_type,
-                                "latest_video_title_preview": title_preview,
-                                "last_updated_at": datetime.now(
-                                    timezone.utc
-                                ).isoformat(),
-                            }
-                        ).eq("yt_channel_id", yt_channel_id).execute()
+                    # Send notification
+                    dprint(
+                        f"New activity for {yt_channel_id}: ID={video_id}, Status={event_type}."
+                    )
+                    await self.send_notification(config, latest_item)
+                    self.last_notified[yt_channel_id] = now
 
-                        self.channel_cache[yt_channel_id] = {
-                            "id": video_id,
-                            "status": event_type,
+                    # Update database & cache
+                    title_preview = " ".join(video_title.split()[:3])
+                    self.supabase.table("youtube_notifications").update(
+                        {
+                            "latest_video_id": video_id,
+                            "last_video_status": event_type,
+                            "latest_video_title_preview": title_preview,
+                            "last_updated_at": datetime.now(timezone.utc).isoformat(),
                         }
+                    ).eq("yt_channel_id", yt_channel_id).execute()
+
+                    self.channel_cache[yt_channel_id] = {
+                        "id": video_id,
+                        "status": event_type,
+                    }
+
+                    await asyncio.sleep(1)
 
                 except HttpError as e:
-                    dprint(f"An HTTP Error occurred for channel {yt_channel_id}: {e}")
+                    dprint(f"HTTP Error for {yt_channel_id}: {e}")
                 except Exception as e:
-                    dprint(
-                        f"An error occurred while processing channel {yt_channel_id}: {e}"
-                    )
+                    dprint(f"Error processing {yt_channel_id}: {e}")
+
         except Exception as e:
-            dprint(f"A critical error occurred in the main check_for_videos loop: {e}")
+            dprint(f"Critical error in main YouTube loop: {e}")
 
     async def send_notification(self, config: dict, item: dict):
-        """Formats and sends the notification message, including premiere times."""
+        """Formats and sends the notification message."""
         guild = self.bot.get_guild(int(config["guild_id"]))
         if not guild:
             return
+
         channel = guild.get_channel(int(config["discord_channel_id"]))
         if not channel:
             return
@@ -169,10 +204,10 @@ class YouTubeManager:
         video_title = snippet["title"]
         channel_name = snippet["channelTitle"]
         video_url = f"https://www.youtube.com/watch?v={video_id}"
-
         event_type = snippet.get("liveBroadcastContent", "none")
-        activity_line = ""
 
+        # Determine message type
+        activity_line = ""
         if event_type == "upcoming":
             try:
                 video_request = self.youtube.videos().list(
@@ -190,28 +225,30 @@ class YouTubeManager:
             except Exception as e:
                 dprint(f"Could not fetch premiere time for {video_id}: {e}")
                 activity_line = "has scheduled a new Premiere"
-
         elif event_type == "live":
             activity_line = "is now LIVE"
-        else:  # 'none'
+        else:
             activity_line = "just uploaded a new video"
 
-        message = f"Hey {mention}! **{channel_name}** {activity_line}:\n\n**{video_title}**\n{video_url}"
+        message = f"Hey {mention}! **{channel_name}** {activity_line}:\n\n{video_url}"
 
         try:
             await channel.send(message)
         except discord.Forbidden:
-            dprint(f"Error: No permission to send messages in channel {channel.id}")
+            dprint(f"Permission error: cannot send in {channel.id}")
+        except Exception as e:
+            dprint(f"Error sending message in {channel.id}: {e}")
 
     @check_for_videos.before_loop
     async def before_check(self):
         await self.bot.wait_until_ready()
 
+    # ---------------- SLASH COMMANDS ---------------- #
     def register_commands(self):
-        """Registers all slash commands for the YouTube feature."""
+        """Registers all slash commands for YouTube features."""
 
         @self.bot.tree.command(
-            name="find-youtube-channel-id",
+            name="y1-find-youtube-channel-id",
             description="Find the Channel ID for a YouTube username or handle.",
         )
         @app_commands.describe(
@@ -259,7 +296,7 @@ class YouTubeManager:
                 )
 
         @self.bot.tree.command(
-            name="setup-youtube-notifications",
+            name="y2-setup-youtube-notifications",
             description="Set up notifications for a YouTube channel.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -335,7 +372,7 @@ class YouTubeManager:
                 )
 
         @self.bot.tree.command(
-            name="disable-youtube-notifications",
+            name="y3-disable-youtube-notifications",
             description="Disable YouTube notifications for a specific channel.",
         )
         @app_commands.checks.has_permissions(administrator=True)

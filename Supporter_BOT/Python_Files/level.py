@@ -472,7 +472,7 @@ class LevelManager:
     def register_commands(self):
         # MODIFIED: This command now saves the role and guild name.
         @self.bot.tree.command(
-            name="setup-level-reward",
+            name="l3-setup-level-reward",
             description="Set a role reward for reaching a specific level.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -493,7 +493,7 @@ class LevelManager:
             )
 
         @self.bot.tree.command(
-            name="level-reward-show",
+            name="l4-level-reward-show",
             description="Show configured level rewards in this server.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -520,7 +520,7 @@ class LevelManager:
 
         # MODIFIED: This command now saves the channel and guild name.
         @self.bot.tree.command(
-            name="notify-level-msg", description="Set a channel for level-up messages."
+            name="l5-notify-level-msg", description="Set a channel for level-up messages."
         )
         @app_commands.checks.has_permissions(administrator=True)
         async def notify_level_msg(
@@ -540,7 +540,7 @@ class LevelManager:
             )
 
         @self.bot.tree.command(
-            name="level", description="Check your or another user's level."
+            name="l1-level", description="Check your or another user's level."
         )
         async def level(
             interaction: discord.Interaction, member: discord.Member = None
@@ -564,7 +564,7 @@ class LevelManager:
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         @self.bot.tree.command(
-            name="leaderboard", description="Show the top 10 users on the leaderboard."
+            name="l2-leaderboard", description="Show the top 10 users on the leaderboard."
         )
         async def leaderboard(interaction: discord.Interaction):
             data = (
@@ -595,7 +595,7 @@ class LevelManager:
 
         # MODIFIED: This command now saves the guild name.
         @self.bot.tree.command(
-            name="set-auto-reset",
+            name="l6-set-auto-reset",
             description="Set automatic XP reset schedule (in days).",
         )
         @app_commands.describe(days="Number of days between automatic resets (1-365)")
@@ -621,7 +621,7 @@ class LevelManager:
             )
 
         @self.bot.tree.command(
-            name="show-auto-reset",
+            name="l7-show-auto-reset",
             description="Show the current auto-reset configuration for this server.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -675,7 +675,7 @@ class LevelManager:
                 )
 
         @self.bot.tree.command(
-            name="stop-auto-reset",
+            name="l8-stop-auto-reset",
             description="Disable the automatic XP reset for this server.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -688,7 +688,7 @@ class LevelManager:
             )
 
         @self.bot.tree.command(
-            name="reset-xp",
+            name="l9-reset-xp",
             description="MANUALLY reset all XP and remove reward roles.",
         )
         @app_commands.checks.has_permissions(administrator=True)
@@ -708,7 +708,7 @@ class LevelManager:
             )
 
         @self.bot.tree.command(
-            name="upgrade-all-roles",
+            name="l10-upgrade-all-roles",
             description="Manually sync roles for all users based on their current level.",
         )
         @app_commands.checks.has_permissions(administrator=True)

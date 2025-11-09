@@ -42,7 +42,7 @@ class OwnerActionsManager:
         """Registers all slash commands for the owner actions feature."""
 
         @self.bot.tree.command(
-            name="leaveserver",
+            name="g4-leaveserver",
             description="Forces the bot to leave a specific server (Bot Owner only).",
         )
         @app_commands.describe(guild_id="The ID of the server to leave.")
@@ -85,7 +85,7 @@ class OwnerActionsManager:
                 )
 
         @self.bot.tree.command(
-            name="banguild",
+            name="g5-banguild",
             description="Bans a server from using the bot and forces it to leave (Bot Owner only).",
         )
         @app_commands.describe(guild_id="The ID of the server to ban.")
@@ -137,7 +137,7 @@ class OwnerActionsManager:
                 )
 
         @self.bot.tree.command(
-            name="unbanguild",
+            name="g6-unbanguild",
             description="Removes a server from the ban list (Bot Owner only).",
         )
         @app_commands.describe(guild_id="The ID of the server to unban.")
