@@ -181,6 +181,34 @@ class YouTubeManager:
                         f"Check {yt_channel_id}: Cache={last_known_id}/{last_known_status}, API={video_id}/{event_type}"
                     )
 
+                    # ===== DATABASE CHECK: Prevent duplicate notifications =====
+                    # Check if this video was already sent in the last 24 hours
+                    one_day_ago = (
+                        datetime.now(timezone.utc) - timedelta(days=1)
+                    ).isoformat()
+                    existing_log = (
+                        self.supabase.table("youtube_notification_logs")
+                        .select("id")
+                        .eq("guild_id", config["guild_id"])
+                        .eq("yt_channel_id", yt_channel_id)
+                        .eq("video_id", video_id)
+                        .eq("video_status", event_type)
+                        .gte("notified_at", one_day_ago)
+                        .execute()
+                    )
+
+                    if existing_log.data:
+                        dprint(
+                            f"✅ Video {video_id} already notified within 24h. Skipping."
+                        )
+                        # Update cache to stay in sync
+                        self.channel_cache[yt_channel_id] = {
+                            "id": video_id,
+                            "status": event_type,
+                        }
+                        continue
+                    # ===== END DATABASE CHECK =====
+
                     # Skip if same ID and status (no new event)
                     if video_id == last_known_id and event_type == last_known_status:
                         continue
@@ -531,7 +559,7 @@ class YouTubeManager:
 
                 if not logs.data:
                     await interaction.followup.send(
-                        "📭 No notification logs found for this server.", ephemeral=True
+                        "🔭 No notification logs found for this server.", ephemeral=True
                     )
                     return
 
@@ -544,8 +572,8 @@ class YouTubeManager:
                 )
 
                 for log in logs.data:
-                    status_emoji = {"live": "🔴", "upcoming": "🔔", "none": "📹"}.get(
-                        log.get("video_status", "none"), "📹"
+                    status_emoji = {"live": "🔴", "upcoming": "🔔", "none": "🔹"}.get(
+                        log.get("video_status", "none"), "🔹"
                     )
 
                     notified_time = datetime.fromisoformat(

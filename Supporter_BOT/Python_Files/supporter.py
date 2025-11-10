@@ -16,9 +16,7 @@ from Python_Files.date_and_time import DateTimeManager
 from Python_Files.no_text import NoTextManager
 from Python_Files.help import HelpManager
 from Python_Files.youtube_notification import YouTubeManager
-from Python_Files.owner_actions import (
-    OwnerActionsManager,
-)  # <--- IMPORT THE NEW MANAGER
+from Python_Files.owner_actions import OwnerActionsManager
 
 # Get the base directory for data files
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +42,7 @@ notext_manager = NoTextManager(bot, DATA_DIR)
 level_manager = LevelManager(bot, DATA_DIR)
 youtube_manager = YouTubeManager(bot)
 help_manager = HelpManager(bot)
-owner_manager = OwnerActionsManager(bot)  # <--- INITIALIZE THE NEW MANAGER
+owner_manager = OwnerActionsManager(bot)
 
 
 @bot.event
@@ -60,7 +58,7 @@ async def on_ready():
     notext_manager.register_commands()
     youtube_manager.register_commands()
     help_manager.register_commands()
-    owner_manager.register_commands()  # <--- REGISTER THE NEW COMMANDS
+    owner_manager.register_commands()
 
     # Sync slash commands globally
     try:
@@ -69,19 +67,16 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
-    # ========================= NEW CODE START =========================
     # Print the list of servers to the console
-    print("-" * 30)
-    print(f"Bot is connected to {len(bot.guilds)} server(s):")
+    print("-" * 60)
+    print(f"🚀 Bot is connected to {len(bot.guilds)} server(s):")
     for guild in bot.guilds:
-        print(f"- {guild.name} (ID: {guild.id})")
-    print("-" * 30)
-    # ========================== NEW CODE END ==========================
+        print(f"   - {guild.name} (ID: {guild.id})")
+    print("-" * 60)
 
-    print("🚀 Bot is fully ready!")
+    print("✅ Bot is fully ready and operational!")
 
 
-# ========================= NEW CODE START =========================
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     """Event that triggers when the bot joins a new server."""
@@ -104,9 +99,6 @@ async def on_guild_join(guild: discord.Guild):
             await guild.leave()
 
 
-# ========================== NEW CODE END ==========================
-
-
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -115,12 +107,6 @@ async def on_message(message):
     await notext_manager.handle_message(message)
     await level_manager.handle_message(message)
     await bot.process_commands(message)
-
-
-# ... (rest of your supporter.py file remains the same) ...
-# The /setup-time-channels, /setup-no-text, /remove-no-text,
-# /show-config, /serverlist, error handling, and run_bot functions
-# are all still here.
 
 
 # ===== SLASH COMMANDS DEFINED IN MAIN FILE =====
