@@ -1,4 +1,4 @@
-# Supporter BOT Tester
+# Supporter BOT
 
 A multi-functional Discord bot designed to automate server management and enhance user engagement. This bot features a comprehensive leveling system, YouTube notifications, automated time-channel updates, and advanced media/link control systems, all managed through intuitive slash commands. It is built to be robust, scalable, and easy for server administrators to configure.
 
@@ -25,18 +25,9 @@ A multi-functional Discord bot designed to automate server management and enhanc
 
 The bot uses a simple, linear progression system where a new level is achieved every **1,000 total XP**. Users earn XP in several ways:
 
-* **Text Messages**: 1 XP per message
-* **Image Messages**: 2 XP per message
-* **Voice Chat**: 3 XP per 120 seconds of activity (capped at 1,500 XP per reset period)
-
-| Target Level  | Total XP Needed   |
-| :------------ | :---------------- |
-| **Level 1**   | 1,000 XP          |
-| **Level 10**  | 10,000 XP         |
-| **Level 20**  | 20,000 XP         |
-| **Level 30**  | 30,000 XP         |
-| **Level 50**  | 50,000 XP         |
-| **Level 100** | 100,000 XP        |
+* **Text Messages**: 10 XP per message
+* **Image Messages**: 15 XP per message
+* **Voice Chat**: 4 XP per 60 seconds of activity (capped at 1,500 XP per reset period)
 
 ## 🤖 Command List
 
@@ -115,10 +106,9 @@ Tester/
 │   ├── owner_actions.py      # Handles owner-exclusive commands like leaving/banning servers.
 │   └── help.py               # Manages the help command and its display.
 └── Data_Files/               # For configuration, data storage, and dependencies.
-    ├── ~~.env                # Stores private credentials like bot token and database keys.~~
-    ├── ~~requirements.txt    # Lists all Python libraries required for the project.~~
-    ├── no_text.json          # Stores local configuration for no-text channels.
-    └── date_and_time.json    # Stores local configuration for time channels.
+    ├── .env                  # Stores private credentials like bot token and database keys.
+    ├── requirements.txt      # Lists all Python libraries required for the project.
+    └── Database-Schema       # Design Database. 
 ```
 
 ## 🚀 Setup and Installation Guide
@@ -153,6 +143,7 @@ Before you begin, you will need:
 The bot uses (PostgreSQL) to store all persistent data. In your Database project's SQL Editor, run the complete database setup script to create all required tables:
 
 **Required Tables:**
+
 * `users` - Stores user XP, levels, and voice XP
 * `level_roles` - Stores role rewards for levels
 * `level_notify_channel` - Stores notification channel configuration

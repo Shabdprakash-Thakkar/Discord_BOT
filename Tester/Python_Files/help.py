@@ -1,35 +1,45 @@
 # Python_Files/help.py
+# The complete and final help command.
 
 import discord
 from discord.ext import commands
 from datetime import datetime, timezone
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class HelpManager:
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        log.info("Help system has been initialized.")
 
     def register_commands(self):
+        """Registers the /g1-help slash command."""
+
         @self.bot.tree.command(
-            name="g1-help", description="Show instructions for moderators and users"
+            name="g1-help",
+            description="Show instructions and a complete list of commands.",
         )
         async def help_command(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+
             embed = discord.Embed(
                 title="🤖 Supporter Bot Help",
-                description="Complete list of available commands organized by category",
-                color=0x00FF00,
+                description="Complete list of available commands organized by category.",
+                color=discord.Color.from_rgb(0, 255, 0),  # A bright green color
                 timestamp=datetime.now(timezone.utc),
             )
 
             embed.add_field(
                 name="📊 Leveling System",
                 value=(
-                    "`/l1-level` → Check your or another user's level and XP\n"
-                    "`/l2-leaderboard` → Show top 10 users\n"
-                    "`/l3-setup-level-reward` → Set role reward for a level\n"
-                    "`/l4-level-reward-show` → Show configured level rewards\n"
-                    "`/l5-notify-level-msg` → Set channel for level-up notifications\n"
-                    "`/l10-upgrade-all-roles` → Manually sync roles for all users"
+                    "`/l1-level` → Check your or another user's level and XP.\n"
+                    "`/l2-leaderboard` → Show the top 10 users in the server.\n"
+                    "`/l3-setup-level-reward` → Set a role reward for a specific level.\n"
+                    "`/l4-level-reward-show` → Display all configured level rewards.\n"
+                    "`/l5-notify-level-msg` → Set the channel for level-up announcements.\n"
+                    "`/l10-upgrade-all-roles` → Manually sync roles for all users."
                 ),
                 inline=False,
             )
@@ -37,10 +47,10 @@ class HelpManager:
             embed.add_field(
                 name="♻️ XP Reset System",
                 value=(
-                    "`/l6-set-auto-reset` → Set automatic XP reset schedule (1-365 days)\n"
-                    "`/l7-show-auto-reset` → Show current auto-reset configuration\n"
-                    "`/l8-stop-auto-reset` → Disable automatic XP reset\n"
-                    "`/l9-reset-xp` → Manually reset all XP and roles"
+                    "`/l6-set-auto-reset` → Schedule automatic XP resets (1-365 days).\n"
+                    "`/l7-show-auto-reset` → Show the current auto-reset configuration.\n"
+                    "`/l8-stop-auto-reset` → Disable the automatic XP reset.\n"
+                    "`/l9-reset-xp` → Manually reset all XP and reward roles immediately."
                 ),
                 inline=False,
             )
@@ -48,32 +58,25 @@ class HelpManager:
             embed.add_field(
                 name="📢 YouTube Notifications",
                 value=(
-                    "`/y1-find-youtube-channel-id` → Find a channel's ID from its username\n"
-                    "`/y2-setup-youtube-notifications` → Set up notifications for a channel\n"
-                    "`/y3-disable-youtube-notifications` → Stop notifications for a channel"
+                    "`/y1-find-youtube-channel-id` → Find a channel's ID from its @handle.\n"
+                    "`/y2-setup-youtube-notifications` → Set up notifications for a YT channel.\n"
+                    "`/y3-disable-youtube-notifications` → Stop notifications for a YT channel."
                 ),
                 inline=False,
             )
 
             embed.add_field(
-                name="🚫📝 No-Text Channels",
+                name="🚫📝 No-Text & Link Restrictions",
                 value=(
-                    "`/n1-setup-no-text` → Configure a media-only channel\n"
-                    "`/n2-remove-no-text` → Remove no-text restrictions\n"
-                    "`/n3-bypass-no-text` → Allow a role to bypass restrictions\n"
-                    "`/n4-show-bypass-roles` → Show roles that can bypass\n"
-                    "`/n5-remove-bypass-role` → Remove a role's bypass ability"
-                ),
-                inline=False,
-            )
-
-            embed.add_field(
-                name="🔗 Link Restrictions",
-                value=(
-                    "`/n6-no-discord-link` → Delete Discord invite links (prevent server promotion)\n"
-                    "`/n7-no-links` → Delete ALL links silently (most restrictive)\n"
-                    "`/n8-remove-no-discord-link` → Remove Discord link restriction\n"
-                    "`/n9-remove-no-links` → Remove no-links restriction"
+                    "`/n1-setup-no-text` → Configure a media-only channel.\n"
+                    "`/n2-remove-no-text` → Remove media-only restrictions.\n"
+                    "`/n3-bypass-no-text` → Allow a role to bypass restrictions.\n"
+                    "`/n4-show-bypass-roles` → Show roles that can bypass.\n"
+                    "`/n5-remove-bypass-role` → Remove a role's bypass ability.\n"
+                    "`/n6-no-discord-link` → Delete Discord invite links in a channel.\n"
+                    "`/n7-no-links` → Delete ALL links in a channel.\n"
+                    "`/n8-remove-no-discord-link` → Stop deleting Discord links.\n"
+                    "`/n9-remove-no-links` → Stop deleting all links."
                 ),
                 inline=False,
             )
@@ -81,29 +84,28 @@ class HelpManager:
             embed.add_field(
                 name="⏰ Time & Date Channels",
                 value=(
-                    "`/t1-setup-time-channels` → Set up date, India, and Japan time channels"
+                    "`/t1-setup-time-channels` → Set up date, India, and Japan time channels."
                 ),
                 inline=False,
             )
 
             embed.add_field(
-                name="⚙️ Configuration",
+                name="⚙️ General Commands",
                 value=(
-                    "`/g1-help` → Show this help message\n"
-                    "`/g2-show-config` → Show current bot configuration for your server"
+                    "`/g1-help` → Show this help message.\n"
+                    "`/g2-show-config` → Show current bot configuration for this server."
                 ),
                 inline=False,
             )
 
-            # Conditionally add the owner commands section
             if await self.bot.is_owner(interaction.user):
                 embed.add_field(
                     name="👑 Owner Commands",
                     value=(
-                        "`/g3-serverlist` → Lists all servers the bot is in\n"
-                        "`/g4-leaveserver` → Force the bot to leave a server\n"
-                        "`/g5-banguild` → Ban a server from using the bot\n"
-                        "`/g6-unbanguild` → Unban a server"
+                        "`/g3-serverlist` → Lists all servers the bot is in.\n"
+                        "`/g4-leaveserver` → Force the bot to leave a server.\n"
+                        "`/g5-banguild` → Ban a server from using the bot.\n"
+                        "`/g6-unbanguild` → Unban a server."
                     ),
                     inline=False,
                 )
@@ -113,4 +115,6 @@ class HelpManager:
                 icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
             )
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed)
+
+        log.info("💻 Help command registered.")

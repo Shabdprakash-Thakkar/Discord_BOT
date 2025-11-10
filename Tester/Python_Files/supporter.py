@@ -1,277 +1,250 @@
-# supporter.py
+# Python_Files/supporter.py
+# The complete, fully integrated central hub of your bot.
 
-from dotenv import load_dotenv
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 import os
-from datetime import datetime, timezone
 import logging
+import asyncpg
+from datetime import datetime, timezone
 
-# Configure logging to reduce console spam
-logging.basicConfig(level=logging.WARNING)
-
-# Corrected import paths for all feature managers
-from Python_Files.level import LevelManager
-from Python_Files.date_and_time import DateTimeManager
-from Python_Files.no_text import NoTextManager
-from Python_Files.help import HelpManager
-from Python_Files.youtube_notification import YouTubeManager
-from Python_Files.owner_actions import OwnerActionsManager
-
-# Get the base directory for data files
+# --- Basic Setup ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "Data_Files")
 load_dotenv(os.path.join(DATA_DIR, ".env"))
 
-# Bot configuration
-TOKEN = os.getenv("DISCORD_TOKEN")
-CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+logging.basicConfig(
+    level=logging.INFO, format="[%(asctime)s] [%(name)s] [%(levelname)s]  %(message)s"
+)
+log = logging.getLogger(__name__)
 
-# Bot setup
+# --- Import All Feature Managers ---
+from date_and_time import DateTimeManager
+from no_text import NoTextManager
+from help import HelpManager
+from owner_actions import OwnerActionsManager
+from level import LevelManager
+from youtube_notification import YouTubeManager
+
+# --- Bot Configuration ---
+TOKEN = os.getenv("DISCORD_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
-intents.messages = True
 intents.members = True
+intents.voice_states = True
 
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# Initialize all feature managers
-datetime_manager = DateTimeManager(bot, DATA_DIR)
-notext_manager = NoTextManager(bot, DATA_DIR)
-level_manager = LevelManager(bot, DATA_DIR)
-youtube_manager = YouTubeManager(bot)
-help_manager = HelpManager(bot)
-owner_manager = OwnerActionsManager(bot)
+class SupporterBot(commands.Bot):
+    """A custom bot class to hold our database connection and managers."""
+
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        self.pool = None
+
+    async def setup_hook(self):
+        """This function is called once the bot is ready, before it connects to Discord."""
+        log.info("Bot is setting up...")
+
+        # 1. Connect to the PostgreSQL database
+        try:
+            self.pool = await asyncpg.create_pool(DATABASE_URL, max_size=20)
+            log.info("✅ Successfully connected to the PostgreSQL database.")
+        except Exception as e:
+            log.critical(f"❌ CRITICAL: Could not connect to the database: {e}")
+            await self.close()
+            return
+
+        # 2. Initialize and start all managers
+        log.info("Initializing feature managers...")
+        self.datetime_manager = DateTimeManager(self, self.pool)
+        self.notext_manager = NoTextManager(self, self.pool)
+        self.help_manager = HelpManager(self)
+        self.owner_manager = OwnerActionsManager(self, self.pool)
+        self.level_manager = LevelManager(self, self.pool)
+        self.youtube_manager = YouTubeManager(self, self.pool)
+
+        await self.datetime_manager.start()
+        await self.notext_manager.start()
+        await self.level_manager.start()
+        await self.youtube_manager.start()
+
+        # 3. Register slash commands from all managers
+        self.datetime_manager.register_commands()
+        self.notext_manager.register_commands()
+        self.help_manager.register_commands()
+        self.owner_manager.register_commands()
+        self.level_manager.register_commands()
+        self.youtube_manager.register_commands()
+
+        log.info("All managers have been initialized.")
+
+
+bot = SupporterBot()
 
 
 @bot.event
 async def on_ready():
-    # Start all feature managers
-    await datetime_manager.start()
-    await notext_manager.start()
-    await level_manager.start()
-    await youtube_manager.start()
+    """Event that runs when the bot is fully connected and ready."""
+    log.info("=" * 50)
+    log.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
 
-    # Register all commands from manager files
-    level_manager.register_commands()
-    notext_manager.register_commands()
-    youtube_manager.register_commands()
-    help_manager.register_commands()
-    owner_manager.register_commands()
-
-    # Sync slash commands globally
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands globally")
+        log.info(f"✅ Synced {len(synced)} slash commands globally.")
     except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
+        log.error(f"❌ Failed to sync slash commands: {e}")
 
-    # Print the list of servers to the console
-    print("-" * 60)
-    print(f"🚀 Bot is connected to {len(bot.guilds)} server(s):")
+    log.info(f"🚀 Bot is connected to {len(bot.guilds)} server(s):")
     for guild in bot.guilds:
-        print(f"   - {guild.name} (ID: {guild.id})")
-    print("-" * 60)
-
-    print("✅ Bot is fully ready and operational!")
+        log.info(f"   - {guild.name} (ID: {guild.id})")
+    log.info("=" * 50)
+    log.info("✅ Bot is fully ready and operational!")
 
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    """Event that triggers when the bot joins a new server."""
-    print(f"🔥 Joined a new server: {guild.name} (ID: {guild.id})")
-
-    # Check if the guild is on the ban list
-    if await owner_manager.is_guild_banned(guild.id):
-        print(
-            f"🚫 Attempted to join a banned server: {guild.name}. Leaving immediately."
-        )
+    log.info(f"🔥 Joined a new server: {guild.name} (ID: {guild.id})")
+    if await bot.owner_manager.is_guild_banned(guild.id):
+        log.warning(f"🚫 Bot joined banned server {guild.name}. Leaving immediately.")
         try:
-            # Try to send a message to the owner if possible
             if guild.owner:
                 await guild.owner.send(
-                    "This bot is not permitted to be in this server and has been removed."
+                    "This bot is not permitted in this server and has been removed."
                 )
         except discord.Forbidden:
-            print("Could not notify the server owner about the ban.")
+            log.warning("Could not notify server owner about the ban.")
         finally:
             await guild.leave()
 
 
-@bot.event
-async def on_message(message):
-    if message.author.bot or not message.guild:
-        return
-
-    await notext_manager.handle_message(message)
-    await level_manager.handle_message(message)
-    await bot.process_commands(message)
-
-
-# ===== SLASH COMMANDS DEFINED IN MAIN FILE =====
+# --- GENERAL COMMANDS ---
 @bot.tree.command(
-    name="t1-setup-time-channels",
-    description="Set up date, India time, and Japan time channels",
+    name="g2-show-config",
+    description="Show the current bot configuration for this server.",
 )
-async def setup_time_channels(
-    interaction: discord.Interaction,
-    date_channel: discord.abc.GuildChannel,
-    india_channel: discord.abc.GuildChannel,
-    japan_channel: discord.abc.GuildChannel,
-):
-    await interaction.response.defer(ephemeral=True)
-    await datetime_manager.setup_channels(
-        interaction, date_channel, india_channel, japan_channel
-    )
-
-
-@bot.tree.command(
-    name="n1-setup-no-text",
-    description="Set up a channel where only media/links are allowed",
-)
-async def setup_no_text(
-    interaction: discord.Interaction,
-    no_text_channel: discord.TextChannel,
-    redirect_channel: discord.TextChannel,
-):
-    await interaction.response.defer(ephemeral=True)
-    await notext_manager.setup_channel(interaction, no_text_channel, redirect_channel)
-
-
-@bot.tree.command(
-    name="n2-remove-no-text", description="Remove no-text restriction from a channel"
-)
-async def remove_no_text(
-    interaction: discord.Interaction, channel: discord.TextChannel
-):
-    await interaction.response.defer(ephemeral=True)
-    await notext_manager.remove_channel(interaction, channel)
-
-
-@bot.tree.command(name="g2-show-config", description="Show current bot configuration")
+@discord.app_commands.checks.has_permissions(manage_guild=True)
 async def show_config(interaction: discord.Interaction):
+    """Displays a comprehensive summary of all bot configurations for the server."""
     await interaction.response.defer(ephemeral=True)
-    guild_id = str(interaction.guild_id)
+    guild_id = str(interaction.guild.id)
+
     embed = discord.Embed(
-        title="🤖 Bot Configuration",
-        color=0x00FF00,
+        title=f"🤖 Bot Configuration for {interaction.guild.name}",
+        color=discord.Color.blue(),
         timestamp=datetime.now(timezone.utc),
     )
 
-    time_config = datetime_manager.get_config(guild_id)
-    if time_config:
-        embed.add_field(
-            name="⏰ Time Channels",
-            value=f"📅 Date: <#{time_config['date']}>\n🇮🇳 India: <#{time_config['india']}>\n🇯🇵 Japan: <#{time_config['japan']}>",
-            inline=False,
+    async with bot.pool.acquire() as conn:
+        # 1. Leveling System Config
+        level_notify_ch_id = await conn.fetchval(
+            "SELECT channel_id FROM public.level_notify_channel WHERE guild_id = $1",
+            guild_id,
         )
-    else:
-        embed.add_field(
-            name="⏰ Time Channels", value="❌ Not configured", inline=False
+        level_reset_days = await conn.fetchval(
+            "SELECT days FROM public.auto_reset WHERE guild_id = $1", guild_id
         )
+        level_rewards_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM public.level_roles WHERE guild_id = $1", guild_id
+        )
+        level_value = (
+            f"**Notifications:** {f'<#{level_notify_ch_id}>' if level_notify_ch_id else 'Not Set'}\n"
+            f"**Auto-Reset:** {f'Every {level_reset_days} days' if level_reset_days else 'Disabled'}\n"
+            f"**Role Rewards:** {level_rewards_count} configured"
+        )
+        embed.add_field(name="📊 Leveling & XP", value=level_value, inline=False)
 
-    notext_config = notext_manager.get_config(guild_id)
-    if notext_config and notext_config["channels"]:
-        notext_info = ""
-        for ch_id in notext_config["channels"]:
-            redirect_id = notext_config["redirects"].get(str(ch_id))
-            notext_info += f"🚫📝 <#{ch_id}> → 💬 <#{redirect_id}>\n"
-        embed.add_field(name="🚫📝 No-Text Channels", value=notext_info, inline=False)
-    else:
-        embed.add_field(
-            name="🚫📝 No-Text Channels", value="❌ None configured", inline=False
+        # 2. YouTube Notifications Config
+        yt_configs = await conn.fetch(
+            "SELECT yt_channel_name, target_channel_id FROM public.youtube_notification_config WHERE guild_id = $1",
+            guild_id,
         )
-
-    # Add no-discord-links channels from Supabase
-    try:
-        discord_links_data = (
-            notext_manager.supabase.table("no_discord_links_channels")
-            .select("*")
-            .eq("guild_id", guild_id)
-            .execute()
-        )
-        if discord_links_data.data:
-            discord_links_info = ""
-            for row in discord_links_data.data:
-                ch_id = row["channel_id"]
-                discord_links_info += f"🚫 <#{ch_id}> (Discord invites blocked)\n"
-            embed.add_field(
-                name="🚫 No Discord Invites", value=discord_links_info, inline=False
+        if yt_configs:
+            yt_value = "\n".join(
+                [
+                    f"• **{cfg['yt_channel_name']}** → <#{cfg['target_channel_id']}>"
+                    for cfg in yt_configs
+                ]
             )
-    except Exception as e:
-        print(f"❌ Error fetching no_discord_links config: {e}")
+        else:
+            yt_value = "No YouTube channels are being monitored."
+        embed.add_field(name="📢 YouTube Notifications", value=yt_value, inline=False)
 
-    # Add no-links channels from Supabase
-    try:
-        no_links_data = (
-            notext_manager.supabase.table("no_links_channels")
-            .select("*")
-            .eq("guild_id", guild_id)
-            .execute()
+        # 3. Channel Restrictions Config
+        no_text_ch = await conn.fetch(
+            "SELECT channel_id FROM public.no_text_channels WHERE guild_id = $1",
+            guild_id,
         )
-        if no_links_data.data:
-            no_links_info = ""
-            for row in no_links_data.data:
-                ch_id = row["channel_id"]
-                no_links_info += f"🚫🔗 <#{ch_id}> (No links allowed)\n"
-            embed.add_field(name="🚫🔗 No Links", value=no_links_info, inline=False)
-    except Exception as e:
-        print(f"❌ Error fetching no_links config: {e}")
-
-    embed.set_footer(text=f"Server ID: {interaction.guild_id}")
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-@bot.tree.command(
-    name="g3-serverlist",
-    description="Lists all servers the bot is in (Bot Owner only).",
-)
-async def serverlist(interaction: discord.Interaction):
-    # This is a security check. It ensures only the person who created the bot
-    # in the Discord Developer Portal can use this command.
-    if not await bot.is_owner(interaction.user):
-        await interaction.response.send_message(
-            "❌ You do not have permission to use this command.", ephemeral=True
+        no_discord_ch = await conn.fetch(
+            "SELECT channel_id FROM public.no_discord_links_channels WHERE guild_id = $1",
+            guild_id,
         )
-        return
+        no_links_ch = await conn.fetch(
+            "SELECT channel_id FROM public.no_links_channels WHERE guild_id = $1",
+            guild_id,
+        )
+        bypass_roles_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM public.bypass_roles WHERE guild_id = $1", guild_id
+        )
 
-    # Defer the response to give the bot time to build the list, and make it private
-    await interaction.response.defer(ephemeral=True)
+        restriction_value = ""
+        if no_text_ch:
+            restriction_value += f"**Media-Only:** {len(no_text_ch)} channel(s)\n"
+        if no_discord_ch:
+            restriction_value += (
+                f"**No Discord Invites:** {len(no_discord_ch)} channel(s)\n"
+            )
+        if no_links_ch:
+            restriction_value += f"**No Links (All):** {len(no_links_ch)} channel(s)\n"
+        restriction_value += f"**Bypass Roles:** {bypass_roles_count} configured"
+        embed.add_field(
+            name="🚫 Channel Restrictions", value=restriction_value, inline=False
+        )
 
-    # Build a formatted string containing the server list
-    server_list_details = []
-    for guild in bot.guilds:
-        server_list_details.append(f"- **{guild.name}** (ID: `{guild.id}`)")
+        # 4. Time Channels Config
+        time_cfg = await conn.fetchrow(
+            "SELECT date_channel_id, india_channel_id, japan_channel_id FROM public.time_channel_config WHERE guild_id = $1",
+            guild_id,
+        )
+        if time_cfg:
+            time_value = (
+                f"📅 <#{time_cfg['date_channel_id']}> | "
+                f"🇮🇳 <#{time_cfg['india_channel_id']}> | "
+                f"🇯🇵 <#{time_cfg['japan_channel_id']}>"
+            )
+            embed.add_field(name="⏰ Time Channels", value=time_value, inline=False)
 
-    message_content = "\n".join(server_list_details)
-
-    # Send the final list back to the owner
-    await interaction.followup.send(
-        f"🔎 I am currently in the following **{len(bot.guilds)}** server(s):\n{message_content}"
-    )
+    await interaction.followup.send(embed=embed)
 
 
-# ===== ERROR HANDLING =====
 @bot.tree.error
 async def on_app_command_error(
     interaction: discord.Interaction, error: discord.app_commands.AppCommandError
 ):
-    print(f"❌ Slash command error: {error}")
-    message = "❌ An error occurred while processing your command."
+    log.error(f"Slash command error for '/{interaction.command.name}': {error}")
+    message = "❌ An unexpected error occurred. Please try again later."
+    if isinstance(error, discord.app_commands.MissingPermissions):
+        message = "🚫 You do not have the required permissions to run this command."
+    elif isinstance(error, discord.app_commands.CheckFailure):
+        message = "🚫 You are not allowed to use this command."
     if interaction.response.is_done():
         await interaction.followup.send(message, ephemeral=True)
     else:
         await interaction.response.send_message(message, ephemeral=True)
 
 
-# ===== START BOT =====
 def run_bot():
+    """Checks for necessary tokens and runs the bot."""
     if not TOKEN:
-        print("❌ Error: DISCORD_TOKEN not found in environment variables!")
-        exit(1)
-    print("🚀 Starting Supporter Bot...")
-    bot.run(TOKEN)
+        log.critical("❌ Error: DISCORD_TOKEN not found in .env file!")
+        return
+    if not DATABASE_URL:
+        log.critical("❌ Error: DATABASE_URL not found in .env file!")
+        return
+    bot.run(TOKEN, log_handler=None)
 
 
 if __name__ == "__main__":

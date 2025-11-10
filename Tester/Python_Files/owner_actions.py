@@ -1,176 +1,163 @@
 # Python_Files/owner_actions.py
+# This module is now fully database-driven and asynchronous.
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-import os
-from supabase import create_client, Client
 from datetime import datetime, timezone
+import asyncpg
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class OwnerActionsManager:
     """Manages owner-exclusive actions like leaving or banning guilds."""
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, pool: asyncpg.Pool):
         self.bot = bot
-
-        # Initialize Supabase client
-        sup_url = os.getenv("SUPABASE_URL")
-        sup_key = os.getenv("SUPABASE_KEY")
-        if not sup_url or not sup_key:
-            raise ValueError(
-                "Supabase URL or Key not found in .env for OwnerActionsManager."
-            )
-        self.supabase: Client = create_client(sup_url, sup_key)
-        print("🔑 OwnerActionsManager initialized.")
+        self.pool = pool
+        log.info("Owner Actions system has been initialized.")
 
     async def is_guild_banned(self, guild_id: int) -> bool:
-        """Check if a guild ID is in the banned_guilds table."""
+        """Checks if a guild ID is in the banned_guilds table."""
         try:
-            response = (
-                self.supabase.table("banned_guilds")
-                .select("guild_id")
-                .eq("guild_id", str(guild_id))
-                .execute()
-            )
-            return bool(response.data)
+            query = "SELECT 1 FROM public.banned_guilds WHERE guild_id = $1"
+            # fetchval returns the value of the first column of the first row, or None.
+            is_banned = await self.pool.fetchval(query, str(guild_id))
+            return is_banned is not None
         except Exception as e:
-            print(f"❌ Error checking if guild {guild_id} is banned: {e}")
-            return False
+            log.error(f"Error checking if guild {guild_id} is banned: {e}")
+            return False  # Fail safe: if DB check fails, don't assume it's banned.
 
     def register_commands(self):
-        """Registers all slash commands for the owner actions feature."""
+        """Registers all owner-only slash commands."""
+
+        # A custom check to ensure only the bot owner can use these commands
+        async def is_bot_owner(interaction: discord.Interaction) -> bool:
+            return await self.bot.is_owner(interaction.user)
+
+        @self.bot.tree.command(
+            name="g3-serverlist",
+            description="Lists all servers the bot is in (Bot Owner only).",
+        )
+        @app_commands.check(is_bot_owner)
+        async def serverlist(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+
+            description = ""
+            for guild in sorted(self.bot.guilds, key=lambda g: g.name):
+                description += f"- **{guild.name}** (ID: `{guild.id}`)\n"
+
+            embed = discord.Embed(
+                title=f"🔎 Bot is in {len(self.bot.guilds)} Servers",
+                description=description,
+                color=discord.Color.blurple(),
+            )
+            await interaction.followup.send(embed=embed)
 
         @self.bot.tree.command(
             name="g4-leaveserver",
             description="Forces the bot to leave a specific server (Bot Owner only).",
         )
+        @app_commands.check(is_bot_owner)
         @app_commands.describe(guild_id="The ID of the server to leave.")
         async def leaveserver(interaction: discord.Interaction, guild_id: str):
-            if not await self.bot.is_owner(interaction.user):
-                await interaction.response.send_message(
-                    "❌ You do not have permission to use this command.", ephemeral=True
-                )
-                return
-
             await interaction.response.defer(ephemeral=True)
-
             try:
-                target_guild_id = int(guild_id)
-                guild = self.bot.get_guild(target_guild_id)
-
+                guild = self.bot.get_guild(int(guild_id))
                 if not guild:
                     await interaction.followup.send(
-                        f"❌ I am not a member of a server with the ID `{guild_id}`.",
-                        ephemeral=True,
+                        f"❌ I am not a member of a server with the ID `{guild_id}`."
                     )
                     return
 
                 await guild.leave()
+                log.info(f"Owner forced bot to leave server: {guild.name} ({guild.id})")
                 await interaction.followup.send(
-                    f"✅ Successfully left the server: **{guild.name}** (`{guild_id}`).",
-                    ephemeral=True,
+                    f"✅ Successfully left the server: **{guild.name}** (`{guild.id}`)."
                 )
-
             except ValueError:
                 await interaction.followup.send(
-                    "❌ Invalid Guild ID format. Please provide a numeric ID.",
-                    ephemeral=True,
+                    "❌ Invalid Guild ID format. Please provide a numeric ID."
                 )
             except Exception as e:
-                print(f"Error during /leaveserver command: {e}")
+                log.error(f"Error during /leaveserver command: {e}")
                 await interaction.followup.send(
-                    "❌ An unexpected error occurred while trying to leave the server.",
-                    ephemeral=True,
+                    "❌ An unexpected error occurred while trying to leave the server."
                 )
 
         @self.bot.tree.command(
             name="g5-banguild",
-            description="Bans a server from using the bot and forces it to leave (Bot Owner only).",
+            description="Bans a server and forces the bot to leave (Bot Owner only).",
         )
+        @app_commands.check(is_bot_owner)
         @app_commands.describe(guild_id="The ID of the server to ban.")
         async def banguild(interaction: discord.Interaction, guild_id: str):
-            if not await self.bot.is_owner(interaction.user):
-                await interaction.response.send_message(
-                    "❌ You do not have permission to use this command.", ephemeral=True
-                )
-                return
-
             await interaction.response.defer(ephemeral=True)
-
             try:
-                target_guild_id = int(guild_id)
+                # Use an UPSERT query to add/update the ban record
+                query = """
+                    INSERT INTO public.banned_guilds (guild_id, banned_at, banned_by)
+                    VALUES ($1, NOW(), $2)
+                    ON CONFLICT (guild_id) DO UPDATE SET
+                      banned_at = NOW(),
+                      banned_by = $2;
+                """
+                await self.pool.execute(query, guild_id, str(interaction.user.id))
 
-                # Add to Supabase banned_guilds table
-                self.supabase.table("banned_guilds").upsert(
-                    {
-                        "guild_id": str(target_guild_id),
-                        "banned_at": datetime.now(timezone.utc).isoformat(),
-                        "banned_by": str(interaction.user.id),
-                    }
-                ).execute()
-
-                # If the bot is in the server, leave it
-                guild = self.bot.get_guild(target_guild_id)
+                # If the bot is currently in the server, leave it.
+                guild = self.bot.get_guild(int(guild_id))
                 if guild:
                     await guild.leave()
+                    log.warning(
+                        f"Owner BANNED and left server: {guild.name} ({guild.id})"
+                    )
                     await interaction.followup.send(
-                        f"✅ Server **{guild.name}** (`{guild_id}`) has been banned and I have left.",
-                        ephemeral=True,
+                        f"✅ Server **{guild.name}** (`{guild_id}`) has been banned and I have left."
                     )
                 else:
-                    await interaction.followup.send(
-                        f"✅ Server ID `{guild_id}` has been added to the ban list. I was not a member of it.",
-                        ephemeral=True,
+                    log.warning(
+                        f"Owner BANNED server ID: {guild_id} (not currently a member)"
                     )
-
+                    await interaction.followup.send(
+                        f"✅ Server ID `{guild_id}` has been added to the ban list. I was not a member of it."
+                    )
             except ValueError:
                 await interaction.followup.send(
-                    "❌ Invalid Guild ID format. Please provide a numeric ID.",
-                    ephemeral=True,
+                    "❌ Invalid Guild ID format. Please provide a numeric ID."
                 )
             except Exception as e:
-                print(f"Error during /banguild command: {e}")
+                log.error(f"Error during /banguild command: {e}")
                 await interaction.followup.send(
-                    "❌ An unexpected error occurred while banning the server.",
-                    ephemeral=True,
+                    "❌ An unexpected error occurred while banning the server."
                 )
 
         @self.bot.tree.command(
             name="g6-unbanguild",
             description="Removes a server from the ban list (Bot Owner only).",
         )
+        @app_commands.check(is_bot_owner)
         @app_commands.describe(guild_id="The ID of the server to unban.")
         async def unbanguild(interaction: discord.Interaction, guild_id: str):
-            if not await self.bot.is_owner(interaction.user):
-                await interaction.response.send_message(
-                    "❌ You do not have permission to use this command.", ephemeral=True
-                )
-                return
-
             await interaction.response.defer(ephemeral=True)
-
             try:
-                # Remove from Supabase banned_guilds table
-                result = (
-                    self.supabase.table("banned_guilds")
-                    .delete()
-                    .eq("guild_id", guild_id)
-                    .execute()
+                # The execute function returns a status string like 'DELETE 1' on success
+                result = await self.pool.execute(
+                    "DELETE FROM public.banned_guilds WHERE guild_id = $1", guild_id
                 )
 
-                if result.data:
+                if result == "DELETE 1":
+                    log.info(f"Owner UNBANNED server ID: {guild_id}")
                     await interaction.followup.send(
-                        f"✅ Server ID `{guild_id}` has been unbanned.", ephemeral=True
+                        f"✅ Server ID `{guild_id}` has been unbanned."
                     )
                 else:
                     await interaction.followup.send(
-                        f"❌ Server ID `{guild_id}` was not found in the ban list.",
-                        ephemeral=True,
+                        f"❌ Server ID `{guild_id}` was not found in the ban list."
                     )
-
             except Exception as e:
-                print(f"Error during /unbanguild command: {e}")
-                await interaction.followup.send(
-                    "❌ An unexpected error occurred.", ephemeral=True
-                )
+                log.error(f"Error during /unbanguild command: {e}")
+                await interaction.followup.send("❌ An unexpected error occurred.")
+
+        log.info("💻 Owner Action commands registered.")
