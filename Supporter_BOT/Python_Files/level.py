@@ -1,5 +1,4 @@
 # Python_Files/level.py
-# FINAL CORRECTED VERSION
 
 import discord
 from discord import app_commands
@@ -19,11 +18,10 @@ class LevelManager:
     def __init__(self, bot: commands.Bot, pool: asyncpg.Pool):
         self.bot = bot
         self.pool = pool
-        # --- FIX: THESE LINES WERE MISSING IN YOUR DEPLOYED FILE ---
         self.voice_sessions = {}
         self.user_cache = {}
         self.message_cooldowns = {}
-        # -----------------------------------------------------------
+        
 
     async def start(self):
         """Starts the manager by adding event listeners and the reset loop."""

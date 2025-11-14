@@ -1,5 +1,4 @@
 # Python_Files/no_text.py
-# This module is now fully database-driven and asynchronous.
 
 import discord
 from discord import app_commands
@@ -48,12 +47,10 @@ class NoTextManager:
         bypass_role_ids = {int(r["role_id"]) for r in bypass_roles}
         member_role_ids = {r.id for r in member.roles}
 
-        # Return True if the member has any of the bypass roles
         return not bypass_role_ids.isdisjoint(member_role_ids)
 
     async def on_message(self, message: discord.Message):
         """The core message handler that enforces all channel restrictions."""
-        # Ignore bots, DMs, or members who can bypass restrictions
         if (
             message.author.bot
             or not message.guild
@@ -65,7 +62,6 @@ class NoTextManager:
         channel_id = str(message.channel.id)
 
         async with self.pool.acquire() as conn:
-            # Check for all three restriction types in the database
             is_no_links = await conn.fetchval(
                 "SELECT 1 FROM public.no_links_channels WHERE guild_id = $1 AND channel_id = $2",
                 guild_id,
@@ -110,7 +106,6 @@ class NoTextManager:
                     warn_msg = await message.channel.send(
                         f"🚫 {message.author.mention}, please use {redirect_channel.mention} for text. This channel is for media only."
                     )
-                    # Automatically delete the warning after 15 seconds
                     await asyncio.sleep(15)
                     await warn_msg.delete()
                 return
@@ -120,14 +115,13 @@ class NoTextManager:
                 f"Missing permissions to delete message in channel {channel_id} (Guild: {guild_id})."
             )
         except discord.NotFound:
-            pass  # Message was already deleted, which is fine.
+            pass 
         except Exception as e:
             log.error(f"Error in NoTextManager on_message handler: {e}")
 
     def register_commands(self):
         """Registers all slash commands for this manager."""
 
-        # /n1 - Setup Media-Only Channel
         @self.bot.tree.command(
             name="n1-setup-no-text",
             description="Configure a channel to only allow media and links.",
@@ -153,7 +147,6 @@ class NoTextManager:
                 ephemeral=True,
             )
 
-        # /n2 - Remove Media-Only Channel
         @self.bot.tree.command(
             name="n2-remove-no-text",
             description="Remove the media-only restriction from a channel.",
@@ -179,7 +172,7 @@ class NoTextManager:
                     ephemeral=True,
                 )
 
-        # /n3 - Add Bypass Role
+
         @self.bot.tree.command(
             name="n3-bypass-no-text",
             description="Allow a role to bypass all message restrictions.",

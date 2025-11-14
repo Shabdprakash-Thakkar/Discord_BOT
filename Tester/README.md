@@ -6,7 +6,7 @@ A multi-functional Discord bot designed to automate server management and enhanc
 
 * **🏆 Advanced Leveling System:** Engage your community by rewarding users with XP for their activity. The system includes automatic role rewards for reaching new levels, a server-wide leaderboard to foster competition, and a dedicated channel for level-up announcements. For seasonal events, administrators can perform a manual or scheduled automatic reset of all user XP and roles.
 
-* **📢 YouTube Notifications:** Automatically announce new video uploads, livestreams, and premieres from your favorite YouTube channels. Features a customizable message with role mentions and a helper command to easily find any channel's ID.
+* **📢 YouTube Notifications:** Automatically announce new video uploads, livestreams, and premieres from your favorite YouTube channels. Features a customizable message with role mentions, a helper command to easily find any channel's ID, and admin tools to seed historical videos or test the channel RSS feed. The bot uses RSS feeds (no API quota required) for reliable monitoring.
 
 * **🚫📝 No-Text Channel Enforcement:** Create dedicated media-only channels where plain text is not allowed. The bot will automatically remove text-only messages and send a temporary notification, guiding users to the correct channel for conversations. A role-based bypass system allows designated members to override this restriction.
 
@@ -25,8 +25,8 @@ A multi-functional Discord bot designed to automate server management and enhanc
 
 The bot uses a simple, linear progression system where a new level is achieved every **1,000 total XP**. Users earn XP in several ways:
 
-* **Text Messages**: 10 XP per message
-* **Image Messages**: 15 XP per message
+* **Text Messages**: 10 XP per message  
+* **Image Messages**: 15 XP per message  
 * **Voice Chat**: 4 XP per 60 seconds of activity (capped at 1,500 XP per reset period)
 
 ## 🤖 Command List
@@ -66,6 +66,8 @@ All bot interactions are handled through slash commands available by typing `/` 
 | `/y1-find-youtube-channel-id`        | Finds a channel's ID using its @handle or custom name.    | Everyone      |
 | `/y2-setup-youtube-notifications`    | Sets up notifications for a specific YouTube channel.     | Administrator |
 | `/y3-disable-youtube-notifications`  | Disables notifications for a configured YouTube channel.  | Administrator |
+| `/y4-bulk-seed-all-videos`           | [ADMIN] Seed existing videos from a channel (bulk seed).  | Administrator |
+| `/y5-test-rss-feed`                  | [ADMIN] Test the RSS feed for a channel and preview results.| Administrator |
 
 ### No-Text Channel Commands
 
@@ -73,8 +75,8 @@ All bot interactions are handled through slash commands available by typing `/` 
 | :----------------------- | :---------------------------------------------------- | :------------ |
 | `/n1-setup-no-text`      | Restricts a channel to only allow media and links.    | Administrator |
 | `/n2-remove-no-text`     | Removes the no-text restriction from a channel.       | Administrator |
-| `/n3-bypass-no-text`     | Allows a role to send text in no-text channels.       | Administrator |
-| `/n4-show-bypass-roles`  | Shows all roles that can bypass no-text restrictions. | Administrator |
+| `/n3-bypass-no-text`     | Allows a role to bypass all message restrictions.     | Administrator |
+| `/n4-show-bypass-roles`  | Shows all roles that can bypass restrictions.         | Administrator |
 | `/n5-remove-bypass-role` | Removes a role's ability to bypass no-text channels.  | Administrator |
 
 ### Link Restriction Commands
@@ -94,8 +96,8 @@ All bot interactions are handled through slash commands available by typing `/` 
 
 ## 📂 Project Structure
 
-``` Files
-Tester/
+``` text
+Supporter_BOT/
 ├── run_supporter.py          # Main startup script to run the bot.
 ├── Python_Files/             # Contains all core bot modules.
 │   ├── supporter.py          # Main bot file, event handling, and command registration.

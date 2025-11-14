@@ -1,5 +1,4 @@
 # Python_Files/owner_actions.py
-# This module is now fully database-driven and asynchronous.
 
 import discord
 from discord import app_commands
@@ -9,7 +8,6 @@ import asyncpg
 import logging
 
 log = logging.getLogger(__name__)
-
 
 class OwnerActionsManager:
     """Manages owner-exclusive actions like leaving or banning guilds."""

@@ -1,5 +1,4 @@
 # Python_Files/help.py
-# The complete and final help command.
 
 import discord
 from discord.ext import commands
@@ -27,7 +26,7 @@ class HelpManager:
             embed = discord.Embed(
                 title="🤖 Supporter Bot Help",
                 description="Complete list of available commands organized by category.",
-                color=discord.Color.from_rgb(0, 255, 0),  # A bright green color
+                color=discord.Color.from_rgb(0, 255, 0),
                 timestamp=datetime.now(timezone.utc),
             )
 
@@ -39,18 +38,11 @@ class HelpManager:
                     "`/l3-setup-level-reward` → Set a role reward for a specific level.\n"
                     "`/l4-level-reward-show` → Display all configured level rewards.\n"
                     "`/l5-notify-level-msg` → Set the channel for level-up announcements.\n"
-                    "`/l10-upgrade-all-roles` → Manually sync roles for all users."
-                ),
-                inline=False,
-            )
-
-            embed.add_field(
-                name="♻️ XP Reset System",
-                value=(
                     "`/l6-set-auto-reset` → Schedule automatic XP resets (1-365 days).\n"
                     "`/l7-show-auto-reset` → Show the current auto-reset configuration.\n"
                     "`/l8-stop-auto-reset` → Disable the automatic XP reset.\n"
-                    "`/l9-reset-xp` → Manually reset all XP and reward roles immediately."
+                    "`/l9-reset-xp` → Manually reset all XP and reward roles immediately.\n"
+                    "`/l10-upgrade-all-roles` → Manually sync roles for all users."
                 ),
                 inline=False,
             )
@@ -60,7 +52,9 @@ class HelpManager:
                 value=(
                     "`/y1-find-youtube-channel-id` → Find a channel's ID from its @handle.\n"
                     "`/y2-setup-youtube-notifications` → Set up notifications for a YT channel.\n"
-                    "`/y3-disable-youtube-notifications` → Stop notifications for a YT channel."
+                    "`/y3-disable-youtube-notifications` → Stop notifications for a YT channel.\n"
+                    "`/y4-bulk-seed-all-videos` → [ADMIN] Seed existing videos for a channel (bulk).\n"
+                    "`/y5-test-rss-feed` → [ADMIN] Test a channel's RSS feed and preview what would be processed."
                 ),
                 inline=False,
             )

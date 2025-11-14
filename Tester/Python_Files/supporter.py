@@ -1,5 +1,4 @@
 # Python_Files/supporter.py
-# The complete, fully integrated central hub of your bot.
 
 import discord
 from discord.ext import commands
